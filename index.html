@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>执医伴 · 中医执业医师 AI 陪伴自习</title>
+<style>
+  :root {
+    --bg: #f5f3ee;
+    --card: #ffffff;
+    --ink: #23272e;
+    --muted: #6b7280;
+    --faint: #9aa1ab;
+    --primary: #2f6b5f;
+    --primary-deep: #245247;
+    --primary-soft: #e6efe9;
+    --amber: #b7791f;
+    --amber-soft: #f7ecdb;
+    --danger: #b5473f;
+    --border: #e6e2d8;
+    --shadow: 0 1px 2px rgba(35, 39, 46, .05), 0 8px 24px rgba(35, 39, 46, .06);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  a { color: var(--primary); }
+  button { font-family: inherit; }
+
+  .layout { display: flex; min-height: 100vh; }
+
+  /* 侧栏 */
+  .sidebar {
+    width: 224px; flex: 0 0 224px; background: #fff;
+    border-right: 1px solid var(--border); padding: 22px 14px;
+    display: flex; flex-direction: column; gap: 6px;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px 18px; }
+  .seal {
+    width: 42px; height: 42px; border-radius: 12px;
+    background: var(--primary); color: #fff; font-size: 22px; font-weight: 700;
+    display: grid; place-items: center; box-shadow: inset 0 -2px 0 rgba(0,0,0,.12);
+  }
+  .brand-name { font-size: 19px; font-weight: 700; letter-spacing: .04em; }
+  .brand-sub { font-size: 12px; color: var(--muted); }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+    color: #444b55; cursor: pointer; border: 0; background: transparent;
+    font-size: 15px; text-align: left; width: 100%;
+  }
+  .nav-item:hover { background: #f3f1ec; }
+  .nav-item.active { background: var(--primary-soft); color: var(--primary-deep); font-weight: 600; }
+  .nav-item .ico { width: 20px; text-align: center; }
+  .sidebar-foot { margin-top: auto; padding: 10px 12px; font-size: 12px; color: var(--faint); }
+
+  /* 主区 */
+  .main { flex: 1; min-width: 0; padding: 30px 38px 60px; }
+  .page { display: none; max-width: 1060px; margin: 0 auto; }
+  .page.active { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  h1.page-title { font-size: 22px; margin: 0 0 4px; }
+  .page-desc { color: var(--muted); margin: 0 0 22px; font-size: 14px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 20px 22px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+
+  /* 今日 */
+  .today-hero { display: flex; gap: 26px; align-items: center; flex-wrap: wrap; }
+  .big-btn {
+    width: 210px; height: 210px; border-radius: 50%; border: 0; cursor: pointer;
+    font-size: 34px; font-weight: 700; color: #fff;
+    background: linear-gradient(145deg, #3a7d6e, var(--primary-deep));
+    box-shadow: 0 12px 28px rgba(47, 107, 95, .28), inset 0 -4px 0 rgba(0,0,0,.12);
+    transition: transform .12s ease, box-shadow .12s ease; flex: 0 0 auto;
+  }
+  .big-btn:hover { transform: translateY(-2px); }
+  .big-btn:active { transform: scale(.97); }
+  .big-btn.done {
+    background: linear-gradient(145deg, #eef3ef, #dce8e0); color: var(--primary-deep);
+    box-shadow: inset 0 -4px 0 rgba(0,0,0,.06); cursor: default;
+  }
+  .today-stats { display: flex; gap: 28px; flex-wrap: wrap; }
+  .stat .num { font-size: 30px; font-weight: 700; color: var(--primary-deep); }
+  .stat .lbl { font-size: 13px; color: var(--muted); }
+  .countdown { font-size: 26px; font-weight: 700; color: var(--primary-deep); }
+  .phrase-cat {
+    display: inline-block; font-size: 12px; color: var(--amber);
+    background: var(--amber-soft); border-radius: 20px; padding: 2px 10px; margin-right: 8px;
+  }
+  .phrase-text { font-size: 17px; line-height: 1.8; margin: 8px 0 14px; }
+
+  /* 大纲 */
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .tabs { display: inline-flex; background: #ebe8e1; border-radius: 10px; padding: 3px; }
+  .tab {
+    border: 0; background: transparent; padding: 7px 20px; border-radius: 8px;
+    cursor: pointer; font-size: 14px; color: #565d66;
+  }
+  .tab.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .search { flex: 1; min-width: 220px; }
+  .search input {
+    width: 100%; padding: 9px 14px; border: 1px solid var(--border); border-radius: 10px;
+    font-size: 14px; background: #fff; outline: none;
+  }
+  .search input:focus { border-color: var(--primary); }
+  .progress-line { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
+  .bar { flex: 1; height: 8px; background: #eceae4; border-radius: 99px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--primary); border-radius: 99px; transition: width .3s ease; }
+  .pct { font-size: 13px; color: var(--muted); min-width: 104px; text-align: right; }
+
+  .part-block, .subject-block { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; background: #fff; }
+  .part-head, .subject-head {
+    display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; user-select: none;
+  }
+  .part-head:hover, .subject-head:hover { background: #faf9f6; }
+  .part-name, .subject-name { font-weight: 600; }
+  .subject-name { font-weight: 500; }
+  .unit { margin: 4px 0; border-top: 1px dashed #eeeae0; }
+  .unit-name { padding: 10px 18px 6px 42px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .item-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 18px 8px 42px; cursor: pointer; border-radius: 8px;
+  }
+  .item-row:hover { background: #f7f5f0; }
+  .item-row .name { flex: 1; }
+  .item-row.s1 .name { color: #7c5b1e; }
+  .item-row.s2 .name { color: var(--primary-deep); font-weight: 600; }
+  .cycle {
+    width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%;
+    border: 1.5px solid #c9c4b8; background: #fff; color: var(--muted);
+    display: grid; place-items: center; font-size: 12px; cursor: pointer;
+    transition: all .15s ease; margin-top: 1px;
+  }
+  .cycle.s1 { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }
+  .cycle.s2 { border-color: var(--primary); background: var(--primary); color: #fff; }
+  .points { margin: 0 0 8px 42px; padding: 8px 12px; background: #faf9f6; border-radius: 8px; font-size: 13px; color: var(--muted); }
+  .points summary { cursor: pointer; color: var(--faint); }
+  .points p { margin: 6px 0 0; }
+  .legend { font-size: 13px; color: var(--muted); display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+  .legend .cycle { cursor: default; }
+
+  /* 大纲行尾 −/× 小按钮 */
+  .item-controls { display: none; gap: 4px; margin-left: 6px; }
+  .item-row:hover .item-controls { display: inline-flex; }
+  .mini {
+    width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px;
+    background: #fff; color: var(--muted); cursor: pointer; font-size: 13px;
+    line-height: 1; display: grid; place-items: center; padding: 0;
+  }
+  .mini:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* 日历 */
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cal-title { font-size: 17px; font-weight: 600; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .cal-dow { text-align: center; font-size: 12px; color: var(--faint); padding: 4px 0; }
+  .cal-day {
+    aspect-ratio: 1; display: grid; place-items: center; border-radius: 10px;
+    font-size: 14px; color: #7a8089; background: #f6f4ef;
+  }
+  .cal-day.checked { background: var(--primary); color: #fff; font-weight: 600; }
+  .cal-day.today { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .cal-day.other { visibility: hidden; }
+
+  /* 设置 */
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+  .field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  input[type=date], select {
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px;
+    font-size: 14px; background: #fff; min-width: 220px;
+  }
+  .tier-opt { display: flex; gap: 10px; flex-wrap: wrap; }
+  .tier-pill {
+    padding: 8px 18px; border: 1.5px solid var(--border); border-radius: 99px;
+    cursor: pointer; font-size: 14px; background: #fff; color: #444b55;
+  }
+  .tier-pill.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-deep); font-weight: 600; }
+  .btn {
+    padding: 9px 18px; border-radius: 10px; border: 1px solid var(--border);
+    background: #fff; cursor: pointer; font-size: 14px; color: #333a43;
+  }
+  .btn:hover { background: #f6f4ef; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.primary:hover { background: var(--primary-deep); }
+  .btn.danger { color: var(--danger); border-color: #e8c9c6; }
+  .btn.danger:hover { background: #fbeeec; }
+  .danger-zone { border: 1px dashed #e8c9c6; border-radius: 12px; padding: 16px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(20px);
+    background: #26302b; color: #fff; padding: 10px 20px; border-radius: 12px;
+    font-size: 14px; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .save-dot { font-size: 12px; color: var(--faint); }
+  [hidden] { display: none !important; }
+
+  /* —— AI 陪伴页 —— */
+  .crew-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .crew-card {
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    border: 1.5px solid var(--border); border-radius: 99px; cursor: pointer; background: #fff; font-size: 14px;
+  }
+  .crew-card:hover { border-color: var(--primary); }
+  .crew-card.on { border-color: var(--primary); background: var(--primary-soft); font-weight: 600; color: var(--primary-deep); }
+  .crew-emoji { font-size: 20px; }
+  .crew-tag { font-size: 11px; color: var(--faint); }
+  .chat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+  .chat-box { min-height: 320px; max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 6px; }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; line-height: 1.7; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.assistant { align-self: flex-start; background: #f0eee8; color: var(--ink); border-bottom-left-radius: 4px; }
+  .msg .who { font-size: 11px; opacity: .55; display: block; margin-bottom: 2px; }
+  .chat-input-row { display: flex; gap: 8px; margin-top: 12px; }
+  .chat-input-row input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; outline: none; }
+  .chat-input-row input:focus { border-color: var(--primary); }
+  .quiz-on { background: var(--amber) !important; border-color: var(--amber) !important; }
+  .chat-empty { color: var(--faint); text-align: center; margin: auto; font-size: 14px; }
+
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; height: auto; flex-direction: row; position: static; overflow-x: auto; padding: 10px; }
+    .brand { padding: 0 8px 0 0; }
+    .brand-sub, .sidebar-foot { display: none; }
+    .main { padding: 20px 16px 50px; }
+    .big-btn { width: 150px; height: 150px; font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="seal">医</div>
+      <div>
+        <div class="brand-name">执医伴</div>
+        <div class="brand-sub">中医执业医师 · AI 陪伴自习</div>
+      </div>
+    </div>
+    <button class="nav-item active" data-page="today"><span class="ico">◎</span>今日</button>
+    <button class="nav-item" data-page="outline"><span class="ico">▤</span>大纲</button>
+    <button class="nav-item" data-page="calendar"><span class="ico">▦</span>打卡日历</button>
+    <button class="nav-item" data-page="companion"><span class="ico">💬</span>陪伴</button>
+    <button class="nav-item" data-page="settings"><span class="ico">⚙</span>设置</button>
+    <div class="sidebar-foot">数据上云（Netlify Blobs）<br><span class="save-dot" id="saveDot">等待载入…</span></div>
+  </aside>
+
+  <main class="main">
+    <section class="page active" id="page-today">
+      <h1 class="page-title">今日</h1>
+      <p class="page-desc" id="todayDateLine"></p>
+      <div class="card">
+        <div class="today-hero">
+          <button class="big-btn" id="checkinBtn">我来了</button>
+          <div class="today-stats">
+            <div class="stat"><div class="num" id="statStreak">0</div><div class="lbl">连续天数</div></div>
+            <div class="stat"><div class="num" id="statMonth">0</div><div class="lbl">本月打卡</div></div>
+            <div class="stat"><div class="num" id="statTotal">0</div><div class="lbl">累计打卡</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>距离笔试</h2>
+        <div class="countdown" id="countdown">还没设置目标日期</div>
+        <div class="muted" style="margin-top:4px" id="countdownSub"></div>
+      </div>
+      <div class="card">
+        <h2>大纲进度</h2>
+        <div class="progress-line"><span style="font-size:13px;width:52px">技能</span><div class="bar"><i id="barSkill" style="width:0"></i></div><span class="pct" id="pctSkill"></span></div>
+        <div class="progress-line"><span style="font-size:13px;width:52px">理论</span><div class="bar"><i id="barTheory" style="width:0"></i></div><span class="pct" id="pctTheory"></span></div>
+        <div class="faint" style="font-size:12px;margin-top:6px">点圆圈：未开始 → 1 轮 → 2 轮 → 3 轮+。轮次代表你刷过几遍，越多越熟。</div>
+      </div>
+      <div class="card">
+        <h2>先贤寄语 <span class="phrase-cat" id="phraseCat">每日一句</span></h2>
+        <div class="phrase-text" id="phraseText">…</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="faint" id="phraseSrc" style="font-size:12px"></span>
+          <button class="btn" id="phraseNext">换一句</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-outline">
+      <h1 class="page-title">大纲</h1>
+      <p class="page-desc">点一下圆圈：未开始 → 已过 1 轮 → 2 轮 → 3 轮+。数据来源：《中医中西医结合专业医师资格考试大纲（2025年版）》。</p>
+      <div class="toolbar">
+        <div class="tabs">
+          <button class="tab active" id="tabTheory">理论</button>
+          <button class="tab" id="tabSkills">技能</button>
+        </div>
+        <div class="search"><input id="searchBox" type="search" placeholder="搜索病名 / 章节，例如：中风、感冒、针灸"></div>
+      </div>
+      <div class="legend">
+        <span style="display:inline-flex;align-items:center;gap:6px"><span class="cycle">·</span>未开始</span>
+        <span style="display:inline-flex;align-items:center;gap:6px"><span class="cycle s1">1</span>已过 1 轮</span>
+        <span style="display:inline-flex;align-items:center;gap:6px"><span class="cycle s2">3</span>3 轮+</span>
+        <span style="display:inline-flex;align-items:center;gap:6px">点圆圈＝＋1 轮；行尾「−」减一轮、「×」清零</span>
+      </div>
+      <div id="outlineTree"></div>
+    </section>
+
+    <section class="page" id="page-calendar">
+      <h1 class="page-title">打卡日历</h1>
+      <p class="page-desc">漏打不归零。这里只记你来了多少次，不记你缺席多少次。</p>
+      <div class="card">
+        <div class="cal-head">
+          <button class="btn" id="calPrev">‹ 上月</button>
+          <div class="cal-title" id="calTitle"></div>
+          <button class="btn" id="calNext">下月 ›</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+      <div class="card">
+        <div class="today-stats">
+          <div class="stat"><div class="num" id="calStreak">0</div><div class="lbl">当前连续</div></div>
+          <div class="stat"><div class="num" id="calBest">0</div><div class="lbl">最长连续</div></div>
+          <div class="stat"><div class="num" id="calTotal">0</div><div class="lbl">累计打卡</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-companion">
+      <h1 class="page-title">医学陪伴</h1>
+      <p class="page-desc">选一位医学先贤 / 同伴陪你。TA 会看你的真实学习进度出题考你、也会顺口问你今天动没动。</p>
+      <div class="crew-bar" id="crewBar"></div>
+      <div class="chat-card">
+        <div class="chat-box" id="chatBox"></div>
+        <div class="chat-input-row">
+          <input id="chatInput" placeholder="和 TA 说点什么…" autocomplete="off" />
+          <button class="btn primary" id="chatSend">发送</button>
+          <button class="btn" id="quizBtn">考考我</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-settings">
+      <h1 class="page-title">设置</h1>
+      <p class="page-desc">学习进度、打卡、聊天记忆都上云保存在 Netlify Blobs（单用户设计）。</p>
+      <div class="card">
+        <h2>目标笔试日期</h2>
+        <div class="field">
+          <input type="date" id="examDate">
+          <div class="hint">2027 年考试时间官方还没公布，通常年底出公告。到时候把日期填进来，首页就会出现倒计时。</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>风格</h2>
+        <div class="tier-opt" id="themeOptions"></div>
+        <div class="hint" style="font-size:12px;margin-top:10px">淡雅、穆夏、莫奈、浮世绘，随时切换，换口味不影响数据。</div>
+      </div>
+      <div class="card">
+        <h2>数据</h2>
+        <div class="field">
+          <button class="btn primary" id="exportBtn">导出备份（下载 JSON）</button>
+          <span class="hint" style="display:inline-block;margin-left:10px">建议每月存到网盘或 U 盘一份</span>
+        </div>
+        <div class="field">
+          <button class="btn" id="importBtn">导入恢复</button>
+          <input type="file" id="importFile" accept="application/json" hidden>
+        </div>
+        <div class="danger-zone">
+          <div style="font-weight:600;margin-bottom:6px">危险区</div>
+          <button class="btn danger" id="clearBtn">清空打卡与进度</button>
+          <div class="hint">会删除全部打卡记录和大纲轮次，无法恢复；设置会保留。需要你确认两次。</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>关于</h2>
+        <div class="muted" style="font-size:13px">
+          大纲数据：《中医中西医结合专业医师资格考试大纲（2025年版）》中医执业医师部分（国卫医考委发〔2025〕1号）。<br>
+          AI 陪伴角色设定照搬自海贼王运动台 onepiece-sports 的「三件套人设 + 防脱题」机制，角色替换为医学主题。<br>
+          部署：Netlify Functions + 智谱 GLM + Blobs；运动数据来自 onepieceai.netlify.app。
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

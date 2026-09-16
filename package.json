@@ -1,0 +1,9 @@
+{
+  "name": "study-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "执业医 AI 陪伴自习台（Netlify + 智谱 GLM + Blobs）",
+  "dependencies": {
+    "@netlify/blobs": "^6.5.0"
+  }
+}
