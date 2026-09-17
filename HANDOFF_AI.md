@@ -145,11 +145,16 @@ Blobs store `study-data`，key `main`：
 
 ## 8. 部署与验证
 
-**GitHub 仓库**：`git@github.com:yidaoyi/study-ai.git`（私有，GitHub 账号 `yidaoyi`）
-本机已有 git 仓库（`.git` 在 `study-ai/` 下），SSH key 已配好，推：`git push -u origin master:main`
+**GitHub 仓库**：https://github.com/yidaoyi/study-ai （**public**，GitHub 账号 `yidaoyi`，默认分支 `main`）
+克隆地址：`git@github.com:yidaoyi/study-ai.git`
+本机已有 git 仓库（`.git` 在 `study-ai/` 下），SSH key 已配好，推：`git push origin master:main`
 
 > ⚠️ 本仓库由**主人在 GitHub 网页手动创建**（GitHub MCP 无建库权限，`create_repository` 返回 403）。
 > 若以后要新建仓库，别再试 MCP，直接让主人到 github.com/new 建空仓库（**不要勾 README**），再推。
+>
+> ⚠️ **推送踩坑**：本机 git 走 ssh 时偶尔报 `Host key verification failed`（ssh 与 git 用的 known_hosts 不一致）。
+> 已在**本仓库**写入 `git config --local core.sshCommand "ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/c/Users/麦冬/.ssh/known_hosts"`，
+> 以后在本目录直接 `git push` 即可；换机器/重建仓库要重新设一次。
 
 1. 把 `study-ai` 整个目录推到 GitHub 仓库（或 Netlify 拖拽上传）
 2. Netlify 新建站点，`build command` = `npm install`，其余读 `netlify.toml`
@@ -219,6 +224,12 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 ---
 
 ## 12. 版本变更记录
+
+### v1.0.3（2026-09-17）代码已推送 GitHub
+- 仓库 https://github.com/yidaoyi/study-ai 已建立（**public**），14 个文件全部推送到 `main`（3 个 commit）
+- 修复本机 git over ssh 的 `Host key verification failed`：写入仓库级 `core.sshCommand`
+- 状态：**等待 Netlify 建站 + 配 `ZHIPU_API_KEY`**，尚未部署上线
+- 提醒：仓库 public + 站点无登录 ⇒ 任何人拿到网址都能读写那份学习数据（数据无隐私，可接受）
 
 ### v1.0.2（2026-09-17）防卡死加固 + 准备部署
 - **修复「页面一直显示等待载入」**：所有网络请求加超时（`fetchWithTimeout`：study 4s / chat 30s / outline 15s），请求挂起时不再永久卡在初始文案
