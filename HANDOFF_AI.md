@@ -225,6 +225,18 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 
 ## 12. 版本变更记录
 
+### v1.1.0（2026-09-17）新增郝万山角色 + 讲稿检索（RAG-lite）
+- **新角色「郝万山」**（🎙️）：口语化、先讲临床故事再落条文、强调抓主证。人设在 `crew-data.js` 末尾，`app.js` 的 `CREW_UI` 同步加了条目
+- **讲稿检索 `netlify/functions/lectures.js`**：中文二元组（bigram）重合度打分，**不引入向量库、零额外成本**
+  - 数据源 `data/lectures/<讲者>.json`（`require` 进包，构建期内联）
+  - 相关性门槛默认 `minScore=0.3`（实测：相关命中 ≈1.0，闲聊 ≈0.09）→ 闲聊不注入讲稿
+  - 取 topK=3、总长 ≤1200 字
+- `chat.js`：按「最后一条 user 消息」检索，命中则拼进 system，要求"化用而非照抄"
+- **切段脚本 `tools/build_lecture.py`**：`python tools/build_lecture.py 原文.txt 郝万山 [--min 120 --max 400]`
+  自动合并过短段、切分过长段、过滤页码噪声，目标 100~600 段
+- 当前 `haowanshan.json` 仍为空（等麦冬提供讲稿原文），空数组时检索自动跳过，不影响功能
+- ⚠️ **版权/隐私提醒**：讲稿会进 GitHub 仓库（当前 public）。若要避免公开，建议把仓库转 Private（Netlify 不受影响）
+
 ### v1.0.3（2026-09-17）代码已推送 GitHub
 - 仓库 https://github.com/yidaoyi/study-ai 已建立（**public**），14 个文件全部推送到 `main`（3 个 commit）
 - 修复本机 git over ssh 的 `Host key verification failed`：写入仓库级 `core.sshCommand`
