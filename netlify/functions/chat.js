@@ -20,6 +20,7 @@ const ONEMIECE_STATS_URL = 'https://onepieceai.netlify.app/.netlify/functions/st
 const STORE_NAME = 'study-data';
 const DEFAULT_KEY = 'main';
 const OWNER_UID = 'maidong'; // 主人的身份码；其他人来访时 AI 不会叫错名字
+const DAILY_GUEST_LIMIT = 40; // 访客每天 AI 对话条数上限（主人不限），防止别人刷爆智谱 key
 
 function sanitizeUid(s) {
   return String(s || '').trim().replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, '').slice(0, 24);
@@ -68,11 +69,33 @@ exports.handler = async (event) => {
   const isGuest = !!uid && uid !== OWNER_UID;
   const who = isGuest ? '对方' : '麦冬';
 
+  // 0.5) 频率限制：AI 接口没有鉴权，访客狂聊会烧掉主人的智谱 key —— 每人每天限 N 条（主人不限）
+  let store = null;
+  try {
+    connectLambda(event);
+    store = getStore(STORE_NAME);
+    const day = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+    const qKey = 'quota:' + (uid || 'anon') + ':' + day;
+    const used = Number((await store.get(qKey)) || 0);
+    if (isGuest && used >= DAILY_GUEST_LIMIT) {
+      return {
+        statusCode: 429,
+        headers: HEADERS,
+        body: JSON.stringify({ error: `今天的体验额度用完了（每人 ${DAILY_GUEST_LIMIT} 条/天），明天再来吧。` }),
+      };
+    }
+    await store.set(qKey, String(used + 1));
+  } catch (err) {
+    /* 配额检查失败不阻断聊天，宁可放行也不让主人用不了 */
+  }
+
   // 1) 拉学习进度（本 store）
   let studyCtx = '';
   try {
-    connectLambda(event);
-    const store = getStore(STORE_NAME);
+    if (!store) {
+      connectLambda(event);
+      store = getStore(STORE_NAME);
+    }
     const data = (await store.get(KEY, { type: 'json' })) || {};
     const checked = data.checkedItems || {};
     const total = data.meta?.totalItems || 1025;

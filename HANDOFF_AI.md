@@ -262,6 +262,9 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
   - 设置页新增「我的身份」卡片：显示身份码、复制专属链接、切换身份
 - **修复真 bug**：`study.js` 的 `saveAll` 分支给 `const data` 重新赋值 → 运行时 TypeError，保存必然失败。已改 `let data`
   （此前「云端保存」一直是坏的，但因为本地 localStorage 兜底，表面看不出来）
+- **AI 频率限制**：`chat.js` 新增 `DAILY_GUEST_LIMIT = 40`（访客每天 40 条，主人不限），计数存 Blobs `quota:<uid>:<日期>`
+  - 原因：AI 接口无鉴权，网址扩散后别人狂聊会烧掉主人的智谱 key
+  - 超限时返回 429 + 中文提示，前端已能显示 `j.error`（原先只显示"没收到回复"）
 - 验证：`node --check` 全过；jsdom 冒烟 5 页切换 + 打卡 + 842 细目渲染，0 错误；身份分片 7 组用例通过
 
 ### v1.1.0（2026-09-17）新增郝万山角色 + 讲稿检索（RAG-lite）

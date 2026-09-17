@@ -492,9 +492,12 @@ async function callAI(msgs) {
       body: JSON.stringify({ crew: currentCrew, messages: msgs, mode: quizMode ? "quiz" : "chat", uid: UID }),
     }, 30000);
     const j = await r.json();
-    const reply = j.reply || "（没收到回复，稍后再试）";
-    msgs.push({ role: "assistant", content: reply });
-    persistChats(currentCrew, msgs);
+    if (j.error) {
+      msgs.push({ role: "assistant", content: j.error });
+    } else {
+      msgs.push({ role: "assistant", content: j.reply || "（没收到回复，稍后再试）" });
+      persistChats(currentCrew, msgs);
+    }
   } catch (e) {
     msgs.push({ role: "assistant", content: "（连接失败，确认已部署且配好 ZHIPU_API_KEY）" });
   }
