@@ -145,6 +145,12 @@ Blobs store `study-data`，key `main`：
 
 ## 8. 部署与验证
 
+**GitHub 仓库**：`git@github.com:yidaoyi/study-ai.git`（私有，GitHub 账号 `yidaoyi`）
+本机已有 git 仓库（`.git` 在 `study-ai/` 下），SSH key 已配好，推：`git push -u origin master:main`
+
+> ⚠️ 本仓库由**主人在 GitHub 网页手动创建**（GitHub MCP 无建库权限，`create_repository` 返回 403）。
+> 若以后要新建仓库，别再试 MCP，直接让主人到 github.com/new 建空仓库（**不要勾 README**），再推。
+
 1. 把 `study-ai` 整个目录推到 GitHub 仓库（或 Netlify 拖拽上传）
 2. Netlify 新建站点，`build command` = `npm install`，其余读 `netlify.toml`
 3. Site settings → Environment variables → 配 `ZHIPU_API_KEY`（和可选的 `WECOM_WEBHOOK_URL`）
@@ -213,6 +219,14 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 ---
 
 ## 12. 版本变更记录
+
+### v1.0.2（2026-09-17）防卡死加固 + 准备部署
+- **修复「页面一直显示等待载入」**：所有网络请求加超时（`fetchWithTimeout`：study 4s / chat 30s / outline 15s），请求挂起时不再永久卡在初始文案
+- 新增 `online` 状态与 `markOnline/markOffline`，`saveDot` 明确显示「已保存到云端」或「本地模式（未上云）」，不再用模糊的「等待载入…」（初始文案改为「连接中…」）
+- `init()` 中 `renderAll()` 包 `try/catch`，单页渲染异常不再导致整页交互瘫痪
+- 大纲加载失败文案改为可操作提示（引导用 `双击启动.bat`）
+- jsdom 冒烟测试通过：5 个页面切换正常、842 细目渲染、打卡生效、0 运行时错误
+- 本地 git 仓库已初始化并提交（2 个 commit），待主人创建 GitHub 空仓库后自动推送
 
 ### v1.0.1（2026-09-16）新增本地预览入口
 - **新增** `双击启动.bat`：本机一键起静态服务（端口 8765）并自动打开浏览器，供部署前看界面
