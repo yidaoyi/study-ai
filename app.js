@@ -41,33 +41,53 @@ const QUOTES = [
 /* ============ 数据层（上云 + 本地降级） ============ */
 const emptyData = () => ({ checkins: [], checkedItems: {}, examDate: null, chats: {} });
 
+/* 带超时的 fetch：网络/服务异常时不许把页面卡死在"等待载入" */
+async function fetchWithTimeout(url, opts = {}, ms = 4000) {
+  const ac = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = ac ? setTimeout(() => ac.abort(), ms) : null;
+  try {
+    return await fetch(url, ac ? Object.assign({}, opts, { signal: ac.signal }) : opts);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/* 是否已连上云端（本地打开时为 false） */
+let online = false;
+
+function markOnline() { online = true; $("saveDot").textContent = "已保存到云端"; $("saveDot").title = "数据存在 Netlify Blobs"; }
+function markOffline() { online = false; $("saveDot").textContent = "本地模式（未上云）"; $("saveDot").title = "未部署或网络不通，数据只存在这台设备的浏览器里"; }
+
 async function loadData() {
   try {
-    const r = await fetch(FN("study"));
+    const r = await fetchWithTimeout(FN("study"));
     if (!r.ok) throw new Error("bad");
     const j = await r.json();
     data = j.data || emptyData();
     localStorage.setItem("study_data", JSON.stringify(data));
+    markOnline();
   } catch (e) {
     data = JSON.parse(localStorage.getItem("study_data") || "null") || emptyData();
+    markOffline();
   }
 }
 
 async function saveData() {
   localStorage.setItem("study_data", JSON.stringify(data));
   try {
-    await fetch(FN("study"), {
+    const r = await fetchWithTimeout(FN("study"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "saveAll", data }),
     });
-    markSaved();
+    if (!r.ok) throw new Error("bad");
+    markOnline();
   } catch (e) {
     $("saveDot").textContent = "已存本地（未上云）";
   }
 }
 
-function markSaved() { $("saveDot").textContent = "已保存到云端"; }
+function markSaved() { online ? markOnline() : markOffline(); }
 function saveSoon() {
   $("saveDot").textContent = "保存中…";
   if (saveTimer) clearTimeout(saveTimer);
@@ -437,11 +457,11 @@ async function callAI(msgs) {
   box.appendChild(loading);
   box.scrollTop = box.scrollHeight;
   try {
-    const r = await fetch(FN("chat"), {
+    const r = await fetchWithTimeout(FN("chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ crew: currentCrew, messages: msgs, mode: quizMode ? "quiz" : "chat" }),
-    });
+    }, 30000);
     const j = await r.json();
     const reply = j.reply || "（没收到回复，稍后再试）";
     msgs.push({ role: "assistant", content: reply });
@@ -529,9 +549,10 @@ function renderAll() {
 
 async function init() {
   try {
-    outline = await fetch("outline.json").then((r) => r.json());
+    outline = await fetchWithTimeout("outline.json", {}, 15000).then((r) => r.json());
   } catch (e) {
-    $("todayDateLine").textContent = "大纲加载失败，请通过本地服务器或部署后打开";
+    $("todayDateLine").textContent = "大纲加载失败：请双击「双击启动.bat」打开，或直接双击 index.html 会读不到数据";
+    markOffline();
     return;
   }
   await loadData();
@@ -539,7 +560,12 @@ async function init() {
   const qt = new URLSearchParams(location.search).get("theme");
   document.body.dataset.theme = ["plain", "mucha", "monet", "ukiyoe"].includes(qt)
     ? qt : (localStorage.getItem("study_theme") || "plain");
-  renderAll();
+  try {
+    renderAll();
+  } catch (e) {
+    console.error(e);
+    toast("页面渲染出错，已记入控制台");
+  }
   markSaved();
   const hash = location.hash.replace("#", "");
   if (["today", "outline", "calendar", "companion", "settings"].includes(hash)) switchPage(hash);
