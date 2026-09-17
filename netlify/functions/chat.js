@@ -9,6 +9,7 @@
 
 const { getStore, connectLambda } = require('@netlify/blobs');
 const { CREW } = require('./crew-data');
+const { retrieve } = require('./lectures');
 
 const ZHIPU_API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 const MODEL = 'glm-4-flash';
@@ -90,8 +91,23 @@ exports.handler = async (event) => {
     exerciseCtx = '【运动数据暂时读不到，照常即可】';
   }
 
+  // 2.5) 讲稿检索（RAG-lite）：若该角色配了讲稿，取最相关的几段原话喂进去
+  let lectureCtx = '';
+  try {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const query = (lastUser && lastUser.content) || '';
+    const hits = retrieve(crew.name, query, { topK: 3, maxChars: 1200, minScore: 0.3 });
+    if (hits.length) {
+      lectureCtx = `【${crew.name}讲稿原话（与麦冬当前问题相关，可引用、可化用，但要用你自己的口气说出来，不要整段照抄）】\n`
+        + hits.map((h) => `- ${h.text}`).join('\n');
+    }
+  } catch (err) {
+    lectureCtx = '';
+  }
+
   // 3) 组装 system
   let system = crew.system + '\n\n' + studyCtx + '\n\n' + exerciseCtx;
+  if (lectureCtx) system += '\n\n' + lectureCtx;
 
   if (body.mode === 'quiz') {
     system += `\n\n【当前任务：出题考麦冬】

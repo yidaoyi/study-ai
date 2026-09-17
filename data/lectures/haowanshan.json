@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "author": "郝万山",
+    "title": "郝万山讲稿（口语化节选）",
+    "note": "用于让「郝万山」角色引用真实讲稿内容。segments 由 tools/build_lecture.py 从原文自动切段生成。",
+    "version": 0,
+    "segmentCount": 0
+  },
+  "segments": []
+}
