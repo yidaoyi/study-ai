@@ -26,6 +26,34 @@ OUT_DIR = os.path.join(BASE, "data", "lectures")
 # 噪声行：页码、纯数字、极短标题
 NOISE = re.compile(r"^\s*(\d+|第?[一二三四五六七八九十百千]+[章节篇]|[.\-—_\s]*|page\s*\d+)\s*$", re.I)
 
+# ---- 幕布/大纲导出的 Markdown 清洗 ----
+MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")          # [文字](链接) -> 文字
+MD_ESC = re.compile(r"\\([\\`*_{}\[\]()#+\-.!])")        # \. \- 等转义还原
+MD_STRONG = re.compile(r"(\*\*|__)")                     # 加粗标记
+MD_LIST = re.compile(r"^\s*(?:[-*+]\s+)?(?:\d+\.\s+)+")  # 行首 "- " 或 "1. " / "1. 2. "
+MD_BULLET = re.compile(r"^\s*[-*+]\s+")
+MD_HEADING = re.compile(r"^\s*#{1,6}\s*")
+MD_NOISE_LINE = re.compile(r"pan\.baidu\.com|网课资源|^\s*$")
+
+
+def clean_markdown(raw):
+    """把幕布/大纲导出的 md 还原成纯讲稿文字（去编号、缩进、加粗、链接、转义）"""
+    lines = []
+    for line in raw.split("\n"):
+        line = line.replace("\t", " ").strip()
+        if not line or MD_NOISE_LINE.search(line):
+            continue
+        line = MD_LINK.sub(r"\1", line)
+        line = MD_ESC.sub(r"\1", line)
+        line = MD_STRONG.sub("", line)
+        line = MD_HEADING.sub("", line)
+        line = MD_LIST.sub("", line)
+        line = MD_BULLET.sub("", line)
+        line = line.strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
 
 def split_long(text, max_len):
     """把过长段落按句末标点切开，尽量凑到 max_len 左右"""
@@ -55,6 +83,10 @@ def build(raw_path, author, min_len=120, max_len=400):
 
     # 统一换行，去掉行尾空白
     raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+    # Markdown（幕布/大纲导出）先清洗成纯文本
+    if raw_path.lower().endswith(".md"):
+        raw = clean_markdown(raw)
+        print("   已按 Markdown 清洗（去编号/缩进/加粗/链接）")
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\n", raw) if p.strip()]
 
     segments, buf = [], ""

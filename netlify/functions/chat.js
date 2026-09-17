@@ -132,7 +132,8 @@ exports.handler = async (event) => {
   try {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const query = (lastUser && lastUser.content) || '';
-    const hits = retrieve(crew.name, query, { topK: 3, maxChars: 1200, minScore: 0.3 });
+    // 不传 minScore：用 lectures.js 里随查询长度自适应的门槛（短句更严，防止闲聊误命中）
+    const hits = retrieve(crew.name, query, { topK: 3, maxChars: 1200 });
     if (hits.length) {
       lectureCtx = `【${crew.name}讲稿原话（与${who}当前问题相关，可引用、可化用，但要用你自己的口气说出来，不要整段照抄）】\n`
         + hits.map((h) => `- ${h.text}`).join('\n');

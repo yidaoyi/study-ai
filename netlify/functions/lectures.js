@@ -17,13 +17,16 @@ const LECTURE_FILES = {
 /* 只保留汉字/数字/字母，去掉标点空白 */
 const normalize = (s) => (s || '').replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '');
 
-/* 生成二元组集合（同时保留单字，防止短查询全落空） */
-function grams(text) {
+/* 生成二元组集合。
+ * 默认只用 bigram —— 单字（"的/了/我"）在大语料里遍地都是，会把闲聊也算成高分，
+ * 只有查询本身很短（< 4 字，bigram 太少）时才兜底加单字，避免短查询全落空。
+ */
+function grams(text, withUnigram = false) {
   const t = normalize(text);
   const set = new Set();
   if (!t) return set;
   for (let i = 0; i < t.length - 1; i++) set.add(t.slice(i, i + 2));
-  for (const ch of t) set.add(ch);
+  if (withUnigram) for (const ch of t) set.add(ch);
   return set;
 }
 
@@ -37,8 +40,12 @@ function grams(text) {
 function retrieve(name, query, opts = {}) {
   const topK = opts.topK || 3;
   const maxChars = opts.maxChars || 1200;
-  // 相关性门槛：低于这个分说明只是闲聊，别硬塞讲稿（实测：相关命中 ~1.0，闲聊 ~0.09）
-  const minScore = opts.minScore || 0.3;
+  // 相关性门槛：低于这个分说明只是闲聊，别硬塞讲稿。
+  // 门槛要随查询长度变 —— 短查询 bigram 少，要么几乎全中要么不中，所以要更严。
+  // 单个字无从判断相关性（"嗨""哦"都会满分命中），直接跳过
+  if (normalize(query).length < 2) return [];
+  const qLen0 = normalize(query).length;
+  const minScore = opts.minScore != null ? opts.minScore : (qLen0 < 6 ? 0.85 : 0.6);
 
   const loader = LECTURE_FILES[name];
   if (!loader) return [];
@@ -52,16 +59,19 @@ function retrieve(name, query, opts = {}) {
   const segs = (data && data.segments) || [];
   if (!segs.length) return [];
 
-  const q = grams(query);
+  // 查询很短（<4 字）时 bigram 太少，兜底启用单字
+  const useUni = normalize(query).length < 4;
+  const q = grams(query, useUni);
   if (!q.size) return [];
 
   const scored = segs.map((s) => {
-    const g = grams(s.text);
+    const g = grams(s.text, useUni);
     if (!g.size) return { seg: s, score: 0 };
     let hit = 0;
     for (const x of q) if (g.has(x)) hit += 1;
-    // 除以长度的平方根：避免长段天然占便宜
-    const score = hit / Math.sqrt(g.size);
+    // 用「查询被讲稿覆盖的比例」打分：衡量这段讲稿命中了多少提问里的词，
+    // 而不是反过来 —— 否则长段、大语料会让闲聊也拿到高分。
+    const score = hit / q.size;
     return { seg: s, score };
   });
 

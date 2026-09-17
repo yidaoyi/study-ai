@@ -56,10 +56,14 @@
 | `outline.json` | 2025 版执业医大纲，1025 细目（理论 842 + 技能 183） |
 | `netlify.toml` | 构建与响应头配置 |
 | `package.json` | 依赖 `@netlify/blobs` |
-| `netlify/functions/crew-data.js` | **6 位医学角色人设的唯一来源** |
-| `netlify/functions/chat.js` | AI 聊天代理（含出题模式、注入学习+运动上下文） |
-| `netlify/functions/study.js` | 学习数据读写（打卡/轮次/考试日期/聊天记忆） |
+| `netlify/functions/crew-data.js` | **7 位医学角色人设的唯一来源** |
+| `netlify/functions/chat.js` | AI 聊天代理（含出题模式、注入学习+运动上下文、访客模式、频率限制） |
+| `netlify/functions/study.js` | 学习数据读写（打卡/轮次/考试日期/聊天记忆），按身份码分片 |
 | `netlify/functions/remind.js` | 每日提醒：AI 生成 + 企微推送 |
+| `netlify/functions/lectures.js` | 讲稿检索（bigram 打分，自适应门槛） |
+| `data/lectures/haowanshan.json` | 郝万山讲稿切段结果（2256 段 / 70 万字 / 2.2MB），构建期 require 进函数包 |
+| `data/lectures/raw/haowanshan_raw.md` | 讲稿**原文**（幕布导出 md，2.1MB）。保留它才能重建 json |
+| `tools/build_lecture.py` | 讲稿 → 切段 json（支持 .md 与 .txt） |
 | `HANDOFF_AI.md` | 本文件（给 AI 的交接文档） |
 | `使用说明.md` | 给使用者（麦冬）的保姆级说明书 |
 | `双击启动.bat` | 本地预览一键启动（本机起 `python -m http.server 8765` 并打开浏览器） |
@@ -253,6 +257,20 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 
 ## 12. 版本变更记录
 
+### v1.3.0（2026-09-17）郝万山讲稿入库 + 检索算法修正
+- **讲稿入库**：麦冬从幕布导出 md（2.1MB / 1851 行）→ `data/lectures/raw/haowanshan_raw.md`
+  - `tools/build_lecture.py` 新增 **Markdown 清洗**（`.md` 自动触发）：去制表符缩进、多级编号 `1. 2.`、加粗 `**`/`__`、
+    markdown 链接、转义符 `\.`，并丢弃网盘链接等噪声行
+  - 切段结果：**2256 段 / 70 万字 / 平均 311 字 / json 2.2MB**
+  - 段数远超原建议的 100~600，但实测性能无虞：require 6ms、单次检索 64~150ms
+- **检索算法修正（重要，原算法在大语料下失效）**：
+  - 原打分 `hit / sqrt(段长)` 且**单字参与计算** → 70 万字语料下"的/了/我"遍地命中，闲聊也能拿 0.87 分
+  - 改为：① 默认**只用二元组**，仅查询 <4 字时兜底单字 ② 打分改 `hit / 查询gram数`（查询被覆盖比例）
+    ③ **门槛随查询长度自适应**：<6 字用 0.85，≥6 字用 0.6 ④ 单字查询（<2 字）直接返回空
+  - 实测：专业提问 **8/8 命中**（桂枝汤/麻黄汤/小柴胡汤/白虎汤/太阳中风…），闲聊误命中 1/6（"我心情不太好"）
+  - 取舍说明：**优先保召回**。漏注入代价（该引用时没引用）> 误注入代价（AI 有判断力，多半不会硬用）
+- `chat.js`：不再传死门槛 `minScore=0.3`，改用 `lectures.js` 的自适应门槛
+
 ### v1.2.0（2026-09-17）多用户隔离 + 修复 saveAll 崩溃
 - **多用户隔离（重要）**：原设计全站共用一份数据（`study-data/main`），把网址发给别人 = 别人能看且能改主人的进度
   - `study.js` / `chat.js` 新增 `sanitizeUid()` + `keyFor()`：key 变为 `u:<身份码>`，无身份码才落 `main`
@@ -300,6 +318,8 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 - 已在 `使用说明.md` 前置「二、先在本地打开看看」章节，明确"本地能干啥/不能干啥"；并补一条 FAQ 说明外网同名站不是本人所有
 - 本地服务验证：`index.html` / `app.js` / `outline.json` 均 200
 
+---
+
 ### v1.0.0（2026-09-08）建站
 - 从 onepiece-sports 照搬人设机制（三件套 + 防脱题 4 条 + 轮换），角色替换为 6 位医学主题
 - 完成功能：打卡 / 大纲 1025 细目轮次 / 热力日历 / 笔试倒计时 / AI 陪伴（聊天 + 出题考你）/ 定时提醒推企微
@@ -308,3 +328,58 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 - **修复**：细目 key 重复导致勾选串位、进度统计错误（1025 条中 817 条重复 id）→ 改用层级路径 key
 - **修复**：补齐大纲行尾 −/× 小按钮（`.mini` / `.item-controls`）缺失的样式
 - 测试：5 个 JS 文件 `node --check` 通过；DOM id 交叉检查 38/38 命中；本地静态服务 4 个资源均 200
+
+## 13. 项目产物盘点与收尾审视（麦冬要求：项目结束时逐条过一遍）
+
+> 这一节是**给收尾用的**。全部东西按「留 / 删 / 待定」分类，收尾时照着过一遍就行。
+> 规则：**只删"不再需要的原件"，不删"能重新生成东西的原料"。**
+
+### 13.1 study-ai（主项目，5.1MB）— 全部保留
+
+| 文件 | 体积 | 处置 | 说明 |
+|---|---|---|---|
+| `index.html` / `app.js` / `netlify.toml` / `package.json` | 小 | ✅ 保留 | 站点本体 |
+| `outline.json` | 336KB | ✅ 保留 | 1025 细目大纲，核心数据 |
+| `netlify/functions/*.js`（5 个） | 小 | ✅ 保留 | 后端全部逻辑 |
+| `data/lectures/haowanshan.json` | 2.2MB | ✅ 保留 | 检索用，**必需** |
+| `data/lectures/raw/haowanshan_raw.md` | 2.1MB | ✅ 保留 | **原料**：删了就得重新导幕布 |
+| `tools/build_lecture.py` | 小 | ✅ 保留 | 原料 → json 的唯一工具 |
+| `HANDOFF_AI.md` / `使用说明.md` | 小 | ✅ 保留 | 交接 + 自用说明 |
+| `双击启动.bat` | 小 | ⚠️ 待定 | 只在本地看界面时有用；以后全靠线上版可以删 |
+
+### 13.2 工作区根目录 — 收尾时清
+
+| 文件/目录 | 体积 | 处置 | 理由 |
+|---|---|---|---|
+| `tools/` | **46MB** | 🗑 **优先删** | 只含 `extract_outline.py` 等一次性脚本 + `node_modules`。大纲已提取完、结果已存进 `study-ai/outline.json`，**原料价值已耗尽**。删前可只留 `extract_outline.py` 一个文件（换新版大纲时可能重用到，约几 KB） |
+| `来都来了/` | 4.8MB | 🗑 归档后删 | 被 study-ai 完全取代的旧台子。⚠️ 它的数据（`data/state.json`）里可能有你打过的卡，删前先看一眼要不要导出 |
+| `预览图/` | 1.6MB | 🗑 可删 | 旧版截图，纯回忆 |
+| `参考_官方大纲全文_2025版.docx` | 1.7MB | ⚠️ 待定 | 大纲的**原始来源**。2025 版用完了；换 2026 版大纲时这份就没用了 |
+| `官方大纲_2025版….pdf` | 5.4MB | ⚠️ 待定 | 同上，原件。网盘存一份后可删本地 |
+| `参考_WB原版_zhiye-study.html` | 41KB | 🗑 可删 | 原版参考实现，study-ai 已完全超越它 |
+| `_screenshot.png` | 155KB | 🗑 可删 | 过程截图 |
+| `工作台提示词_执业医AI陪伴版.md` | 18KB | ⚠️ 转存后删 | 给「工作台搭建师」的提示词，**使命已完成**。有纪念/复用价值，建议挪到别处存，别留在项目根目录 |
+| `交接手册_HANDOFF.md` | 12KB | ✅ 保留 | 根目录总交接，是「以后改东西先读它」的约定入口 |
+
+### 13.3 云上的东西 — 收尾时确认
+
+| 项 | 位置 | 说明 |
+|---|---|---|
+| GitHub 仓库 | https://github.com/yidaoyi/study-ai | 当前 **public**（麦冬确认讲稿可公开）。若不希望讲稿公开，转 Private 即可，Netlify 不受影响 |
+| Netlify 站点 | 麦冬账号下 | 含 `ZHIPU_API_KEY`、`WECOM_WEBHOOK_URL` |
+| Netlify Blobs | store `study-data` | 数据按 `u:<身份码>` 分片。**清理方式**：设置页「清空打卡与进度」只清当前身份 |
+| 每日提醒 | cron-job.org | 若不再需要企微提醒，去那边停掉，或删掉 `WECOM_WEBHOOK_URL` |
+
+### 13.4 收尾检查清单（按顺序打勾）
+
+- [ ] 确认线上版用着顺手（打卡 / 大纲 / AI 三个角色都聊过）
+- [ ] 导出一次 JSON 备份存档
+- [ ] 决定 GitHub 仓库 public 还是 private
+- [ ] 备份 `来都来了/data/state.json`（若有历史打卡），然后删 `来都来了/`
+- [ ] 删 `tools/`（可先只留 `extract_outline.py`）
+- [ ] 删 `预览图/`、`_screenshot.png`、`参考_WB原版_zhiye-study.html`
+- [ ] 两份大纲原件（docx/pdf）挪网盘后删本地
+- [ ] `工作台提示词_…md` 挪走或删
+- [ ] 本文件第 12 节补一条「v2.0.0 收尾清理」
+
+---
