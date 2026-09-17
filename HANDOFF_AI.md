@@ -234,6 +234,21 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 ### ⑦ 大纲原型的遗留问题
 原「来都来了」单机版同样存在坑①（id 重复），因其进度数据几乎为空而未被发现。本台已修，旧项目未动。
 
+### ⑧ git push 报 `Permission denied (publickey)`（2026-09-17 复现过）
+**症状**：明明 `~/.ssh/id_rsa` 在、`known_hosts` 也对，却报
+`git@github.com: Permission denied (publickey)`，`ssh -vT` 里**看不到 `Offering public key`**。
+**根因**：ssh 没主动提供私钥（ssh-agent 会话掉了 / 默认 IdentityFile 没匹配上）。
+**解法（已写入仓库级配置，换机器要重设）**：
+```
+git config --local core.sshCommand "ssh -i /c/Users/麦冬/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/c/Users/麦冬/.ssh/known_hosts"
+```
+之后直接 `git push origin master:main` 即可。
+
+### ⑨ 讲稿检索的打分不能照搬小样本调出来的阈值
+`minScore` 是**跟语料规模强相关**的：只有 12 段时 0.3 合适，2256 段时闲聊也能拿 0.87 分。
+换讲稿、扩语料后**必须重跑一遍「专业提问 vs 闲聊」对比**，别沿用旧阈值。
+（当前实现已改为随查询长度自适应：<6 字 0.85 / ≥6 字 0.6）
+
 ---
 
 ## 10. 与 onepiece 运动台的关系
