@@ -10,8 +10,22 @@
 const { getStore, connectLambda } = require('@netlify/blobs');
 
 const STORE_NAME = 'study-data';
-const KEY = 'main';
+const DEFAULT_KEY = 'main';
 const MAX_CHAT_HISTORY = 30;
+
+/* 多用户隔离：每个身份码一份数据。
+ * 前端通过 ?u=xxx（GET）或 body.uid（POST）传身份码。
+ * 没有身份码时落到 DEFAULT_KEY（兼容老数据，也方便主人裸链接访问）。
+ */
+function sanitizeUid(s) {
+  return String(s || '').trim().replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, '').slice(0, 24);
+}
+function keyFor(event, body) {
+  const q = sanitizeUid((event.queryStringParameters || {}).u);
+  const b = sanitizeUid(body && body.uid);
+  const uid = b || q;
+  return uid ? 'u:' + uid : DEFAULT_KEY;
+}
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -34,16 +48,19 @@ exports.handler = async (event) => {
   }
 
   try {
+    const rawBody = event.httpMethod === 'POST' ? JSON.parse(event.body || '{}') : {};
+    const KEY = keyFor(event, rawBody);
+
     connectLambda(event);
     const store = getStore(STORE_NAME);
-    const data = (await store.get(KEY, { type: 'json' })) || emptyData();
+    let data = (await store.get(KEY, { type: 'json' })) || emptyData();
 
     if (event.httpMethod === 'GET') {
       return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ ok: true, data }) };
     }
 
     if (event.httpMethod === 'POST') {
-      const body = JSON.parse(event.body || '{}');
+      const body = rawBody || {};
       const action = body.action;
 
       if (action === 'checkin') {

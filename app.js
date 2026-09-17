@@ -7,6 +7,34 @@ const todayStr = (d = new Date()) =>
   d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 const FN = (n) => "/.netlify/functions/" + n;
 
+/* ============ 身份（多用户隔离） ============
+ * 数据按身份码分开存。URL 带 ?u=xxx 就用 xxx；没有就用本机存过的；
+ * 都没有就随机生成一个 —— 所以别人裸开网址会自动拿到自己的空间，跟你互不干扰。
+ */
+const UID_KEY = "study_uid";
+
+function sanitizeUid(s) {
+  return String(s || "").trim().replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, "").slice(0, 24);
+}
+function randomUid() {
+  return "u" + Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 6);
+}
+function currentUid() {
+  const q = sanitizeUid(new URLSearchParams(location.search).get("u"));
+  if (q) {
+    localStorage.setItem(UID_KEY, q);   // 链接带身份码：记住它，以后裸开也是这个身份
+    return q;
+  }
+  let s = sanitizeUid(localStorage.getItem(UID_KEY));
+  if (!s) {
+    s = randomUid();                    // 全新访客：随机分配一个独立空间，不碰别人的数据
+    localStorage.setItem(UID_KEY, s);
+  }
+  return s;
+}
+const UID = currentUid();
+const myLink = () => location.origin + location.pathname + "?u=" + encodeURIComponent(UID);
+
 let outline = null;
 let data = { checkins: [], checkedItems: {}, examDate: null, chats: {} };
 let calCursor = new Date();
@@ -61,7 +89,7 @@ function markOffline() { online = false; $("saveDot").textContent = "本地模�
 
 async function loadData() {
   try {
-    const r = await fetchWithTimeout(FN("study"));
+    const r = await fetchWithTimeout(FN("study") + "?u=" + encodeURIComponent(UID));
     if (!r.ok) throw new Error("bad");
     const j = await r.json();
     data = j.data || emptyData();
@@ -79,7 +107,7 @@ async function saveData() {
     const r = await fetchWithTimeout(FN("study"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "saveAll", data }),
+      body: JSON.stringify({ action: "saveAll", uid: UID, data }),
     });
     if (!r.ok) throw new Error("bad");
     markOnline();
@@ -387,7 +415,7 @@ function persistChats(crew, messages) {
   fetch(FN("study"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "saveChats", crew, messages }),
+    body: JSON.stringify({ action: "saveChats", uid: UID, crew, messages }),
   }).catch(() => {});
 }
 
@@ -461,7 +489,7 @@ async function callAI(msgs) {
     const r = await fetchWithTimeout(FN("chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ crew: currentCrew, messages: msgs, mode: quizMode ? "quiz" : "chat" }),
+      body: JSON.stringify({ crew: currentCrew, messages: msgs, mode: quizMode ? "quiz" : "chat", uid: UID }),
     }, 30000);
     const j = await r.json();
     const reply = j.reply || "（没收到回复，稍后再试）";
@@ -483,6 +511,24 @@ function toggleQuiz() {
 
 /* ============ 设置 ============ */
 function renderSettings() {
+  // 身份（多用户隔离）
+  $("uidText").textContent = UID;
+  $("copyLinkBtn").onclick = async () => {
+    const link = myLink();
+    try {
+      await navigator.clipboard.writeText(link);
+      toast("已复制专属链接（含身份码 " + UID + "）");
+    } catch (e) {
+      prompt("手动复制这个链接：", link);
+    }
+  };
+  $("uidSwitchBtn").onclick = () => {
+    const v = sanitizeUid($("uidInput").value);
+    if (!v) { toast("身份码只能用中文、字母、数字、下划线"); return; }
+    localStorage.setItem(UID_KEY, v);
+    location.href = location.origin + location.pathname + "?u=" + encodeURIComponent(v);
+  };
+
   $("examDate").value = data.examDate || "";
   const themes = { plain: "淡雅", mucha: "穆夏", monet: "莫奈", ukiyoe: "浮世绘" };
   const cur = document.body.dataset.theme || "plain";

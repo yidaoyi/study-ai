@@ -73,7 +73,33 @@
 
 ## 4. 数据模型
 
-Blobs store `study-data`，key `main`：
+### 4.0 多用户隔离（v1.2.0 起）
+
+Blobs store `study-data`，**key 按身份码分片**：
+
+| 情况 | key |
+|---|---|
+| 带身份码（`?u=xxx` / `body.uid`） | `u:xxx` |
+| 无身份码（老数据、裸链接兼容） | `main` |
+
+```
+u:maidong   -> 主人的数据
+u:小明       -> 朋友 A 的独立空间
+u:xxxxxx    -> 访客随机分配的空间
+main        -> 兜底/兼容
+```
+
+身份码在后端 `sanitizeUid()` 里强制清洗：只保留 `字母 数字 中文 _ -`，最长 24 字符。
+**这步不能省**——它同时挡住了路径穿越（`a/b/../evil` → `abevil`）。
+
+访客模式（`uid` 存在且 ≠ `maidong`）时，`chat.js` 会：
+- 不注入运动数据（不泄露主人的 onepiece 记录）
+- 在 system 末尾追加「访客模式」指令：不许叫「麦冬」、不许提私人经历、不许给确定性医疗建议
+
+前端身份解析顺序：`?u=` 参数（并写入 localStorage）→ localStorage `study_uid` → 随机生成。
+所以**裸链接给朋友是安全的**：他首次打开会被随机分配独立空间。
+
+### 4.1 单份数据结构
 
 ```json
 {
@@ -92,6 +118,8 @@ Blobs store `study-data`，key `main`：
 ---
 
 ## 5. 接口清单
+
+> 所有接口都支持身份隔离：GET 用 `?u=xxx`，POST 用 `body.uid`。不传则落到 `main`。
 
 ### `GET /.netlify/functions/study`
 返回 `{ ok, data }`（整份学习数据）
@@ -224,6 +252,17 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 ---
 
 ## 12. 版本变更记录
+
+### v1.2.0（2026-09-17）多用户隔离 + 修复 saveAll 崩溃
+- **多用户隔离（重要）**：原设计全站共用一份数据（`study-data/main`），把网址发给别人 = 别人能看且能改主人的进度
+  - `study.js` / `chat.js` 新增 `sanitizeUid()` + `keyFor()`：key 变为 `u:<身份码>`，无身份码才落 `main`
+  - 身份码只允许 `中英文 数字 _ -`，最长 24 字 —— 顺带挡住路径穿越（`a/b/../evil` → `abevil`）
+  - 前端 `app.js`：`?u=` 优先 → localStorage `study_uid` → 随机生成。**裸链接给访客 = 自动独立空间**
+  - `chat.js` 访客模式（uid ≠ `maidong`）：不注入运动数据 + system 追加「别叫麦冬 / 别提私人经历 / 别给确定性医疗建议」
+  - 设置页新增「我的身份」卡片：显示身份码、复制专属链接、切换身份
+- **修复真 bug**：`study.js` 的 `saveAll` 分支给 `const data` 重新赋值 → 运行时 TypeError，保存必然失败。已改 `let data`
+  （此前「云端保存」一直是坏的，但因为本地 localStorage 兜底，表面看不出来）
+- 验证：`node --check` 全过；jsdom 冒烟 5 页切换 + 打卡 + 842 细目渲染，0 错误；身份分片 7 组用例通过
 
 ### v1.1.0（2026-09-17）新增郝万山角色 + 讲稿检索（RAG-lite）
 - **新角色「郝万山」**（🎙️）：口语化、先讲临床故事再落条文、强调抓主证。人设在 `crew-data.js` 末尾，`app.js` 的 `CREW_UI` 同步加了条目

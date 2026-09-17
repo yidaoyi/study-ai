@@ -363,6 +363,22 @@
         <div class="hint" style="font-size:12px;margin-top:10px">淡雅、穆夏、莫奈、浮世绘，随时切换，换口味不影响数据。</div>
       </div>
       <div class="card">
+        <h2>我的身份</h2>
+        <div class="field">
+          <div class="hint">进度按「身份码」分开存。换手机、换浏览器，打开下面的专属链接就能接上同一份数据。</div>
+          <div style="margin:10px 0;font-size:13px">当前身份码：<b id="uidText">—</b></div>
+          <button class="btn primary" id="copyLinkBtn">复制我的专属链接</button>
+          <span class="hint" style="display:inline-block;margin-left:10px">这个链接等于你的数据钥匙，别乱发</span>
+        </div>
+        <div class="field">
+          <input type="text" id="uidInput" placeholder="换个身份码（中文/字母/数字）" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--ink);font-size:14px">
+          <button class="btn" id="uidSwitchBtn">切换身份</button>
+        </div>
+        <div class="hint" style="font-size:12px;margin-top:8px">
+          把网址<b>原样</b>发给朋友（不带 ?u=），他会自动分到一个独立空间 —— 看不到你的进度，也改不了你的数据。
+        </div>
+      </div>
+      <div class="card">
         <h2>数据</h2>
         <div class="field">
           <button class="btn primary" id="exportBtn">导出备份（下载 JSON）</button>
