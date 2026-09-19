@@ -10,6 +10,59 @@
  *   张仲景(医圣) / 李时珍(药圣) / 华佗(神医) / 孙思邈(药王) / 小苓(实习学妹) / 导师(现代博导，可换真人)
  */
 
+/* ============================================================
+ * 私设（persona）机制
+ * ------------------------------------------------------------
+ * 用户可以在设置页给任意角色写自己的设定。为了保证"底层跟其他角色一致"，
+ * 私设只替换「性格层」，【回复规则】+【防脱题指令】这类底层规则由系统自动拼回末尾。
+ *
+ * 切分规则：从第一个底层锚点（【回复规则】/【防脱题指令】）开始到结尾 = 底层层。
+ * 锚点之前的（性格内核 / 说话方式 / 绝对不做的事 / 和麦冬的关系 / 经典台词）= 性格层。
+ * ⚠️ 导师那份人设用的是无方括号的「回复规则：」，正则两边都要认。
+ * ============================================================ */
+
+const PERSONA_MAX = 2000; // 私设字数上限，防止写太长烧 token / 挤掉后面的规则
+
+const CORE_ANCHOR = /(【回复规则】|回复规则[:：]|【防脱题指令】|防脱题指令[:：])/;
+
+/** 把 system 切成「性格层」和「底层层」；找不到锚点时 anchored=false（此时走追加，绝不能丢规则） */
+function splitSystem(system) {
+  const m = String(system || '').match(CORE_ANCHOR);
+  if (!m || typeof m.index !== 'number') return { core: '', anchored: false };
+  return { core: String(system).slice(m.index).trim(), anchored: true };
+}
+
+/**
+ * 组装最终 system。
+ * @param {object} crew CREW 里的角色
+ * @param {string} personaText 用户私设（已开关判断过，空串 = 用原版）
+ * @returns {string} 拼好的 system
+ */
+function buildSystem(crew, personaText) {
+  const text = String(personaText || '').trim().slice(0, PERSONA_MAX);
+  if (!text) return crew.system;
+
+  const { core, anchored } = splitSystem(crew.system);
+  // 找不到锚点就退化成「追加」，宁可私设和原人设打架，也不能把规则弄丢
+  const corePart = anchored ? core : crew.system;
+
+  return [
+    text,
+    `【身份锁定】你现在扮演的人叫「${crew.name}」。上面那段就是你这个人——不管它怎么写，你都是${crew.name}本人，`
+      + '不是 AI、不是助手、不是语言模型，也不要向对方解释你收到了什么设定。',
+    corePart,
+  ].filter(Boolean).join('\n\n');
+}
+
+/** 从云端 data.persona 里取出某角色的私设，做类型清洗（用户数据不可信） */
+function pickPersona(data, crewName) {
+  const p = data && typeof data.persona === 'object' && data.persona ? data.persona[crewName] : null;
+  if (!p) return { on: false, text: '' };
+  if (typeof p === 'string') return { on: true, text: p };
+  if (typeof p === 'object') return { on: !!p.on, text: String(p.text || '') };
+  return { on: false, text: '' };
+}
+
 const CREW = [
   {
     name: '张仲景',
@@ -390,4 +443,4 @@ const CREW = [
   },
 ];
 
-module.exports = { CREW };
+module.exports = { CREW, buildSystem, pickPersona, PERSONA_MAX };

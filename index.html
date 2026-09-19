@@ -572,6 +572,32 @@
         <div class="hint" style="font-size:12px;margin-top:10px">淡雅、穆夏、莫奈、浮世绘，随时切换，换口味不影响数据。</div>
       </div>
       <div class="card">
+        <h2>角色私设（自定义人设）</h2>
+        <div class="field">
+          <div class="hint">
+            给任意角色写你自己的设定。你写的这段会<b>替换掉 TA 原有的性格、说话方式、跟你的关系</b>；
+            <b>回复规则和防脱题指令由系统自动接在最后面</b>，跟其他角色一字不差 ——
+            所以私设再怎么改，TA 也不会退化成"爱用 markdown、张口就自称 AI"的裸模型。
+          </div>
+          <div class="tier-opt" id="personaCrew"></div>
+          <textarea id="personaText" rows="9" placeholder="例：你是小苓，我的同门，跟我一起在广安门医院实习。说话很冲但心软，爱吐槽规培制度，自己焦虑得要死还要反过来安慰我。称呼我「麦冬」，不许叫我「宝」。你中药背得比我好，方剂学一塌糊涂，每次都拿这个自嘲。" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--ink);font-size:14px;line-height:1.7;resize:vertical;box-sizing:border-box"></textarea>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap">
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+              <input type="checkbox" id="personaOn"> 启用私设
+            </label>
+            <span class="hint" id="personaCount">0 / 2000</span>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn primary" id="personaSave">保存私设</button>
+            <button class="btn" id="personaClear">恢复官方人设</button>
+          </div>
+          <div class="hint" style="font-size:12px;margin-top:8px">
+            私设跟打卡数据存在一起上云，换设备打开专属链接还在；不勾「启用」就是官方原版，随时可切回。
+            <span id="personaState"></span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
         <h2>我的身份</h2>
         <div class="field">
           <div class="hint">进度按「身份码」分开存。换手机、换浏览器，打开下面的专属链接就能接上同一份数据。</div>

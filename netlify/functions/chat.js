@@ -8,7 +8,7 @@
  */
 
 const { getStore, connectLambda } = require('@netlify/blobs');
-const { CREW } = require('./crew-data');
+const { CREW, buildSystem, pickPersona, PERSONA_MAX } = require('./crew-data');
 const { retrieve } = require('./lectures');
 
 const ZHIPU_API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
@@ -109,14 +109,20 @@ exports.handler = async (event) => {
     /* 配额检查失败不阻断聊天，宁可放行也不让主人用不了 */
   }
 
-  // 1) 拉学习进度（本 store）
+  // 1) 拉学习进度（本 store）+ 该角色的私设
   let studyCtx = '';
+  let persona = { on: false, text: '' };
   try {
     if (!store) {
       connectLambda(event);
       store = getStore(STORE_NAME);
     }
     const data = (await store.get(KEY, { type: 'json' })) || {};
+    persona = pickPersona(data, crew.name);
+    // 前端随请求带的那份优先：刚点保存就发消息时，debounce 可能还没落盘
+    if (body.persona && typeof body.persona === 'object') {
+      persona = { on: !!body.persona.on, text: String(body.persona.text || '').slice(0, PERSONA_MAX) };
+    }
     const checked = data.checkedItems || {};
     const total = data.meta?.totalItems || 1025;
     const done = Object.keys(checked).filter((k) => checked[k]).length;
@@ -174,8 +180,8 @@ exports.handler = async (event) => {
     lectureCtx = '';
   }
 
-  // 3) 组装 system
-  let system = crew.system + '\n\n' + studyCtx + '\n\n' + exerciseCtx;
+  // 3) 组装 system（私设开启时：只替换性格层，回复规则 + 防脱题指令自动拼在最后，跟其他角色一致）
+  let system = buildSystem(crew, persona.on ? persona.text : '') + '\n\n' + studyCtx + '\n\n' + exerciseCtx;
   if (lectureCtx) system += '\n\n' + lectureCtx;
 
   if (isGuest) {

@@ -98,7 +98,7 @@ const UID = currentUid();
 const myLink = () => location.origin + location.pathname + "?u=" + encodeURIComponent(UID);
 
 let outline = null;
-let data = { checkins: [], checkedItems: {}, examDate: null, chats: {} };
+let data = { checkins: [], checkedItems: {}, examDate: null, chats: {}, quiz: {}, persona: {} };
 let calCursor = new Date();
 let outlineTab = "theory";
 let searchTerm = "";
@@ -130,7 +130,22 @@ const QUOTES = [
 ];
 
 /* ============ 数据层（上云 + 本地降级） ============ */
-const emptyData = () => ({ checkins: [], checkedItems: {}, examDate: null, chats: {}, quiz: {} });
+const emptyData = () => ({ checkins: [], checkedItems: {}, examDate: null, chats: {}, quiz: {}, persona: {} });
+
+/* ============ 角色私设（自定义人设） ============
+ * 结构：data.persona[角色名] = { on: 是否启用, text: 你写的设定 }
+ * 存在云端跟着身份码走；关掉即用官方人设。
+ * 后端 chat.js 会把 text 替换掉「性格层」，【回复规则】【防脱题指令】自动保留。
+ */
+const PERSONA_MAX = 2000;
+let personaCrew = localStorage.getItem("study_persona_crew") || "小苓";
+
+function personaOf(name) {
+  const p = (data.persona || {})[name];
+  if (!p) return { on: false, text: "" };
+  if (typeof p === "string") return { on: true, text: p };
+  return { on: !!p.on, text: String(p.text || "") };
+}
 
 /* 带超时的 fetch：网络/服务异常时不许把页面卡死在"等待载入" */
 async function fetchWithTimeout(url, opts = {}, ms = 4000) {
@@ -525,7 +540,11 @@ function renderCrewBar() {
   CREW_UI.forEach((c) => {
     const el = document.createElement("div");
     el.className = "crew-card" + (c.name === currentCrew ? " on" : "");
-    el.innerHTML = '<span class="crew-emoji">' + c.emoji + "</span><span>" + c.name + "</span><span class='crew-tag'>" + c.tag + "</span>";
+    const hasP = personaOf(c.name).on;
+    el.innerHTML = '<span class="crew-emoji">' + c.emoji + "</span><span>" + c.name
+      + (hasP ? ' <span style="opacity:.8;font-size:11px">✎私设</span>' : "")
+      + "</span><span class='crew-tag'>" + c.tag + "</span>";
+    if (hasP) el.title = "已启用你的私设";
     el.addEventListener("click", () => switchCrew(c.name));
     bar.appendChild(el);
   });
@@ -589,7 +608,7 @@ async function callAI(msgs) {
     const r = await fetchWithTimeout(FN("chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ crew: currentCrew, messages: msgs, mode: quizMode ? "quiz" : "chat", uid: UID }),
+      body: JSON.stringify({ crew: currentCrew, messages: msgs, mode: quizMode ? "quiz" : "chat", uid: UID, persona: personaOf(currentCrew) }),
     }, 30000);
     const j = await r.json();
     if (j.error) {
@@ -887,6 +906,7 @@ async function askHao() {
           crew: "郝万山",
           mode: "explain",
           uid: UID,
+          persona: personaOf("郝万山"),
           question: { q: q.q, o: q.o || [], a: q.a, r: q.r || "" },
           messages: [{ role: "user", content: "讲讲这道题" }],
         }),
@@ -1004,6 +1024,68 @@ function renderSettings() {
       toast("已切换：" + themes[pill.dataset.theme]);
     });
   });
+
+  renderPersonaEditor();
+}
+
+/* 角色私设编辑器：选角色 → 写设定 → 勾选启用 → 保存（立即上云） */
+function renderPersonaEditor() {
+  const bar = $("personaCrew");
+  if (!bar) return;
+
+  if (!bar.dataset.bound) {
+    bar.innerHTML = CREW_UI.map((c) =>
+      '<button class="tier-pill" data-crew="' + c.name + '">' + c.emoji + " " + c.name + "</button>"
+    ).join("");
+    bar.querySelectorAll(".tier-pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        personaCrew = pill.dataset.crew;
+        localStorage.setItem("study_persona_crew", personaCrew);
+        renderSettings();
+      });
+    });
+
+    $("personaText").addEventListener("input", () => {
+      const n = $("personaText").value.length;
+      $("personaCount").textContent = n + " / " + PERSONA_MAX + (n > PERSONA_MAX ? "　超出部分会被截断" : "");
+    });
+
+    $("personaSave").addEventListener("click", async () => {
+      const on = $("personaOn").checked;
+      const text = $("personaText").value.slice(0, PERSONA_MAX);
+      if (on && !text.trim()) { toast("勾了「启用」但还没写内容，先写两句吧"); return; }
+      data.persona = data.persona || {};
+      data.persona[personaCrew] = { on: on, text: text };
+      await saveData();                       // 立即上云，不等 debounce，免得刚保存就聊天还用老的
+      renderCrewBar();
+      renderSettings();
+      toast(on ? "已启用私设：" + personaCrew : "已保存（未启用，当前仍是官方人设）");
+    });
+
+    $("personaClear").addEventListener("click", async () => {
+      if (!confirm("清空「" + personaCrew + "」的私设，恢复官方人设？")) return;
+      data.persona = data.persona || {};
+      delete data.persona[personaCrew];
+      await saveData();
+      renderCrewBar();
+      renderSettings();
+      toast("已恢复官方人设");
+    });
+
+    bar.dataset.bound = "1";
+  }
+
+  bar.querySelectorAll(".tier-pill").forEach((pill) =>
+    pill.classList.toggle("on", pill.dataset.crew === personaCrew)
+  );
+
+  const cur = personaOf(personaCrew);
+  $("personaText").value = cur.text;
+  $("personaOn").checked = cur.on;
+  $("personaCount").textContent = cur.text.length + " / " + PERSONA_MAX;
+  $("personaState").innerHTML = cur.on
+    ? "　当前「" + personaCrew + "」：<b>私设生效中</b>"
+    : "　当前「" + personaCrew + "」：官方人设";
 }
 
 function exportData() {

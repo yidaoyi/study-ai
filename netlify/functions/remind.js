@@ -7,7 +7,7 @@
  */
 
 const { getStore, connectLambda } = require('@netlify/blobs');
-const { CREW } = require('./crew-data');
+const { CREW, buildSystem, pickPersona } = require('./crew-data');
 
 const ZHIPU_API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 const MODEL = 'glm-4-flash';
@@ -79,7 +79,7 @@ function summarizeExercise(j) {
   return parts.join('；');
 }
 
-async function generateReminder(crew, slot, studyLine, exerciseLine) {
+async function generateReminder(crew, personaText, slot, studyLine, exerciseLine) {
   const apiKey = process.env.ZHIPU_API_KEY;
   if (!apiKey) throw new Error('缺少环境变量 ZHIPU_API_KEY');
   const slotLabel = slot === 'morning' ? '早上7点' : '下午1点';
@@ -97,7 +97,7 @@ async function generateReminder(crew, slot, studyLine, exerciseLine) {
     body: JSON.stringify({
       model: MODEL,
       messages: [
-        { role: 'system', content: crew.system },
+        { role: 'system', content: buildSystem(crew, personaText) },
         { role: 'user', content: prompt },
       ],
       temperature: 0.9,
@@ -134,13 +134,17 @@ exports.handler = async (event) => {
   const slot = resolveSlot(event);
   const slotIndex = slot === 'morning' ? 0 : 1;
   const crew = pickCrew(date, slotIndex);
-  const studyLine = summarizeStudy(await getStudyStats());
+  const studyData = await getStudyStats();
+  const studyLine = summarizeStudy(studyData);
   const exerciseLine = summarizeExercise(await getExerciseStats());
+  // 主人给这个角色写了私设的话，每日提醒也照私设的口吻来（底层规则仍由 buildSystem 保留）
+  const p = pickPersona(studyData, crew.name);
+  const personaText = p.on ? p.text : '';
 
   let reminder;
   let aiUsed = true;
   try {
-    reminder = await generateReminder(crew, slot, studyLine, exerciseLine);
+    reminder = await generateReminder(crew, personaText, slot, studyLine, exerciseLine);
   } catch (err) {
     aiUsed = false;
     reminder = crew.fallback || '该温书啦！今天也动一动～';
