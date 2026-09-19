@@ -20,7 +20,12 @@ const ONEMIECE_STATS_URL = 'https://onepieceai.netlify.app/.netlify/functions/st
 const STORE_NAME = 'study-data';
 const DEFAULT_KEY = 'main';
 const OWNER_UID = 'maidong'; // 主人的身份码；其他人来访时 AI 不会叫错名字
-const DAILY_GUEST_LIMIT = 40; // 访客每天 AI 对话条数上限（主人不限），防止别人刷爆智谱 key
+const DAILY_GUEST_LIMIT = 40; // 每位访客每天 AI 对话条数上限（主人不限）
+/* 全站访客每日总条数上限 —— 这道才是真正的防线。
+ * 上面那个 40 条是按身份码算的，而身份码存在浏览器 localStorage 里，
+ * 清一下缓存就拿到新额度，一个人能反复刷。所以必须再有一道「所有人合计」的闸。
+ * 400 条 ≈ 10 个熟人每人聊满 40 条；真有人恶意刷，也就烧这么多，主人自己不受影响。 */
+const DAILY_GUEST_TOTAL = 400;
 
 function sanitizeUid(s) {
   return String(s || '').trim().replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, '').slice(0, 24);
@@ -75,6 +80,21 @@ exports.handler = async (event) => {
     connectLambda(event);
     store = getStore(STORE_NAME);
     const day = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+
+    // 先过全站总闸：访客合计超了就停，主人不受影响
+    if (isGuest) {
+      const allKey = 'quota:__all__:' + day;
+      const all = Number((await store.get(allKey)) || 0);
+      if (all >= DAILY_GUEST_TOTAL) {
+        return {
+          statusCode: 429,
+          headers: HEADERS,
+          body: JSON.stringify({ error: '这台机器今天陪人陪累了，明天再来吧。' }),
+        };
+      }
+      await store.set(allKey, String(all + 1));
+    }
+
     const qKey = 'quota:' + (uid || 'anon') + ':' + day;
     const used = Number((await store.get(qKey)) || 0);
     if (isGuest && used >= DAILY_GUEST_LIMIT) {

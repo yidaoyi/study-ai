@@ -277,7 +277,15 @@ Lambda 兼容模式下，使用 `@netlify/blobs` 前必须先 `connectLambda(eve
 `The environment has not been configured to use Netlify Blobs`。三个用到存储的函数已写好，别删。
 
 ### ③ 单用户、接口无鉴权
-`/chat` 公开可调、会消耗智谱额度；被盗刷就加校验。目前靠"网址不公开"保护。
+`/chat` 公开可调、会消耗智谱额度。两道闸（2026-09-19 加强）：
+
+| 闸 | 值 | 说明 |
+|---|---|---|
+| `DAILY_GUEST_LIMIT` | 40 条/人/天 | 按身份码计数，**存在 localStorage 里，清缓存就能刷新** —— 所以单靠它限不住 |
+| `DAILY_GUEST_TOTAL` | 400 条/天（全站访客合计） | **这道才是真防线**。身份码是前端传的，可以随便伪造，必须有合计闸 |
+
+计数存 Blobs：`quota:<uid>:<日期>` 和 `quota:__all__:<日期>`。主人不受任何限制。
+要收紧就改这两个常量，别动限流逻辑本身。
 
 ### ④ 本地打开时 AI 不可用（正常）
 直接 `file://` 或本地 http.server 打开时，`/.netlify/functions/` 不存在。
