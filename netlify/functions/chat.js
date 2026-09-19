@@ -131,9 +131,21 @@ exports.handler = async (event) => {
   let lectureCtx = '';
   try {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    const query = (lastUser && lastUser.content) || '';
+    let query = (lastUser && lastUser.content) || '';
+    let retrieveOpts = { topK: 3, maxChars: 1200 };
+
+    // 讲题模式：必须拿「题目本身」去检索。
+    // 用户那句"讲讲这道题"里没有知识点，拿它检索只会召到一堆不相关的段落。
+    if (body.mode === 'explain' && body.question && typeof body.question === 'object') {
+      const q = body.question;
+      query = [q.q, ...(q.o || []), q.a, q.r].filter(Boolean).join(' ');
+      // 题目很长（题干+五个选项+解析），bigram 一多，覆盖率天然被摊薄，
+      // 再用默认的 0.6 门槛会一条都召不回来 —— 讲题场景放宽到 0.15，反正后面按分排序取前几条
+      retrieveOpts = { topK: 4, maxChars: 1600, minScore: 0.15 };
+    }
+
     // 不传 minScore：用 lectures.js 里随查询长度自适应的门槛（短句更严，防止闲聊误命中）
-    const hits = retrieve(crew.name, query, { topK: 3, maxChars: 1200 });
+    const hits = retrieve(crew.name, query, retrieveOpts);
     if (hits.length) {
       lectureCtx = `【${crew.name}讲稿原话（与${who}当前问题相关，可引用、可化用，但要用你自己的口气说出来，不要整段照抄）】\n`
         + hits.map((h) => `- ${h.text}`).join('\n');
@@ -159,6 +171,29 @@ exports.handler = async (event) => {
 你是${crew.name}。根据上面的学习进度，挑 1~2 个她还没掌握的细目出一道开放式题（例如"解释XXX""XXX与XXX有何区别""XXX的临床意义是什么"），控制在一道题、篇幅短。
 - 如果对话历史里你上一句已经是考题、且${who}刚刚作答，就转为【点评】：判对错、点出关键知识点、给一句鼓励，不要再出新题。
 - 一次只考一题。用你的角色口吻，不要破坏人设，不要使用 markdown。`;
+  }
+
+  // 3.5) 讲题模式：把题目原文塞进 system，让角色照着讲稿讲这道错题
+  if (body.mode === 'explain' && body.question && typeof body.question === 'object') {
+    const q = body.question;
+    const opts = (q.o || []).map((t, i) => 'ABCDE'[i] + '. ' + t).join('\n');
+    system += `
+
+【当前任务：讲一道题】
+${who}刚刚做了这道题：
+${q.q || ''}
+${opts}
+正确答案：${q.a || '未标注'}
+${q.r ? '题库给的解析：' + q.r : '（题库没给解析）'}
+
+要求：
+- 先说这道题考的是什么，再把正确选项为什么对讲透；${who}选错了的话，顺带点出她错在哪儿。
+- 讲稿里有的内容优先引用，但要化成你自己讲课的大白话，不要整段照抄。
+- 讲稿里没有的（西医检查、妇儿、针灸、法规之类），直接说"这个不在我讲稿里，我按我自己的理解说两句"，不要硬编。
+- 不许用 markdown，不许分点，控制在 250 字以内。讲完可以顺手追一句考她。`;
+    // 前端传来的那句"讲讲这道题"没有信息量，换成一句更像学生的话
+    messages = messages.filter((m) => m.role !== 'user')
+      .concat([{ role: 'user', content: '老师，这道题我不会，你给我讲讲。' }]);
   }
 
   if (!messages.some((m) => m.role === 'system')) {

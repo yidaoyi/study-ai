@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>执医伴 · 中医执业医师 AI 陪伴自习</title>
+<title>来都来了 · 中医执业医师 AI 陪伴自习</title>
 <style>
   :root {
     --bg: #f5f3ee;
@@ -317,13 +317,14 @@
     <div class="brand">
       <div class="seal">医</div>
       <div>
-        <div class="brand-name">执医伴</div>
+        <div class="brand-name">来都来了</div>
         <div class="brand-sub">中医执业医师 · AI 陪伴自习</div>
       </div>
     </div>
     <button class="nav-item active" data-page="today"><span class="ico">◎</span>今日</button>
     <button class="nav-item" data-page="outline"><span class="ico">▤</span>大纲</button>
     <button class="nav-item" data-page="quiz"><span class="ico">✎</span>刷题</button>
+    <button class="nav-item" data-page="shanghan"><span class="ico">🎙️</span>伤寒专科</button>
     <button class="nav-item" data-page="calendar"><span class="ico">▦</span>打卡日历</button>
     <button class="nav-item" data-page="companion"><span class="ico">💬</span>陪伴</button>
     <button class="nav-item" data-page="settings"><span class="ico">⚙</span>设置</button>
@@ -336,12 +337,16 @@
       <p class="page-desc" id="todayDateLine"></p>
       <div class="card">
         <div class="today-hero">
-          <button class="big-btn" id="checkinBtn">我来了</button>
+          <button class="big-btn" id="checkinBtn">来都来了</button>
           <div class="today-stats">
             <div class="stat"><div class="num" id="statStreak">0</div><div class="lbl">连续天数</div></div>
             <div class="stat"><div class="num" id="statMonth">0</div><div class="lbl">本月打卡</div></div>
             <div class="stat"><div class="num" id="statTotal">0</div><div class="lbl">累计打卡</div></div>
           </div>
+        </div>
+        <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <span class="faint" style="font-size:12px">点一下，这一天就算开始了。</span>
+          <button class="btn" id="soundBtn">🔔 音效：开</button>
         </div>
       </div>
       <div class="card">
@@ -408,14 +413,14 @@
             </div>
           </div>
           <div class="qf-row">
-            <span class="qf-label">年份</span>
+            <span class="qf-label">卷组</span>
             <div class="qf-opts" data-group="year">
               <button class="qf-btn active" data-val="">全部</button>
-              <button class="qf-btn" data-val="1">第 1 年</button>
-              <button class="qf-btn" data-val="2">第 2 年</button>
-              <button class="qf-btn" data-val="3">第 3 年</button>
-              <button class="qf-btn" data-val="4">第 4 年</button>
-              <button class="qf-btn" data-val="5">第 5 年</button>
+              <button class="qf-btn" data-val="1">第 1 卷</button>
+              <button class="qf-btn" data-val="2">第 2 卷</button>
+              <button class="qf-btn" data-val="3">第 3 卷</button>
+              <button class="qf-btn" data-val="4">第 4 卷</button>
+              <button class="qf-btn" data-val="5">第 5 卷</button>
             </div>
           </div>
           <div class="qf-row">
@@ -440,6 +445,7 @@
               <button class="qf-btn active" data-val="">全部</button>
               <button class="qf-btn" data-val="wrong">我的错题</button>
               <button class="qf-btn" data-val="undo">没做过的</button>
+              <button class="qf-btn" data-val="shang">伤寒相关</button>
             </div>
           </div>
         </div>
@@ -465,9 +471,53 @@
           <div class="quiz-reason-h">解析</div>
           <div class="quiz-reason-b" id="quizReasonBody"></div>
         </div>
+        <div id="quizRedoRow" style="display:none;margin-top:10px;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn" id="quizRedo">↻ 重做本题</button>
+          <span class="faint" style="font-size:12px" id="quizHistory"></span>
+        </div>
+        <div id="quizHaoRow" style="display:none;margin-top:10px">
+          <button class="btn" id="quizHaoBtn">🎙️ 让郝万山讲讲这道题</button>
+          <span class="faint" style="font-size:12px;margin-left:8px">只在伤寒相关题出现</span>
+        </div>
+        <div class="quiz-reason" id="quizHaoBox" style="display:none">
+          <div class="quiz-reason-h">郝万山讲题 <span class="faint" style="font-weight:400">· 引自《伤寒论》讲稿</span></div>
+          <div class="quiz-reason-b" id="quizHaoBody"></div>
+        </div>
         <div class="quiz-actions">
           <button class="btn" id="quizPrev">‹ 上一题</button>
           <button class="btn" id="quizNext">下一题 ›</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-shanghan">
+      <h1 class="page-title">伤寒专科</h1>
+      <p class="page-desc">从题库里筛出《伤寒论》相关的题，单独成册。这里的题郝万山都能接住 —— 他的讲稿讲的就是这个。</p>
+      <div class="card">
+        <h2>郝万山讲题</h2>
+        <div class="field" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn" id="haoSwitch">讲题按钮：关</button>
+          <span class="hint" style="display:inline-block">打开后，刷题时会出现「让郝万山讲讲这道题」。</span>
+        </div>
+        <div class="hint" style="font-size:12px;margin-top:6px">
+          讲稿是《伤寒论》讲课实录，只覆盖六经辨证和经方。西医诊断、妇儿、针灸、法规这些题他不讲，
+          所以按钮<u>只在这些伤寒相关题上出现</u>，不会让他硬讲不懂的东西。
+        </div>
+      </div>
+      <div class="card">
+        <h2>题量</h2>
+        <div class="quiz-count" id="shangCount">—</div>
+        <div class="quiz-startrow">
+          <button class="btn primary" id="shangStart">开始刷伤寒题</button>
+          <button class="btn" id="shangWrong">只刷我错的</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>判断标准</h2>
+        <div class="muted" style="font-size:13px">
+          题干或选项里出现六经（太阳/阳明/少阳/太阴/少阴/厥阴）、经方名（桂枝汤、麻黄汤、小柴胡汤等）、
+          条文用语（"伤寒""中风""脉浮""汗出""下利"）等关键词即算命中。
+          筛出来的是<b>可能相关</b>，不是全部都讲得通，遇到不贴切的题跳过就行。
         </div>
       </div>
     </section>

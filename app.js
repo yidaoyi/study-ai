@@ -7,6 +7,68 @@ const todayStr = (d = new Date()) =>
   d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 const FN = (n) => "/.netlify/functions/" + n;
 
+/* ============ 音效（纯合成，不碰任何现成采样） ============
+ * 想要的是星露谷那种「短、暖、带一点塑料味的合成音」。
+ * 原版音效文件有版权，所以这里全部用 Web Audio 现合成：振荡器 + 音量包络，
+ * 不引入任何 mp3/wav，也就不存在侵权问题（音色本身不受版权保护）。
+ */
+const Sound = {
+  on: localStorage.getItem("study_sound") !== "off",
+  ctx: null,
+  toggle() {
+    this.on = !this.on;
+    localStorage.setItem("study_sound", this.on ? "on" : "off");
+    return this.on;
+  },
+  _ctx() {
+    try {
+      if (!this.ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        this.ctx = new AC();
+      }
+      if (this.ctx.state === "suspended") this.ctx.resume();
+      return this.ctx;
+    } catch (e) {
+      return null;
+    }
+  },
+  /* 一个音：freq 频率 / at 起始时刻 / dur 时长 / type 波形 / vol 音量
+   * 包络是关键 —— 瞬间起音再指数衰减，衰减太快像噪声，太慢像风琴 */
+  _note(ctx, freq, at, dur, type, vol) {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(vol, at + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    osc.connect(g);
+    g.connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + dur + 0.03);
+  },
+  /* 打卡：C5–E5–G5 上行琶音。三角波出木琴味，叠一层高八度正弦添亮度 */
+  checkin() {
+    if (!this.on) return;
+    const ctx = this._ctx();
+    if (!ctx) return;
+    const t0 = ctx.currentTime + 0.01;
+    [523.25, 659.25, 783.99].forEach((f, i) => {
+      const at = t0 + i * 0.085;
+      this._note(ctx, f, at, 0.45, "triangle", 0.2);
+      this._note(ctx, f * 2, at, 0.24, "sine", 0.06);
+    });
+  },
+  /* 已经打过卡了：单音闷一点，表示"无效操作"而不是报错 */
+  nope() {
+    if (!this.on) return;
+    const ctx = this._ctx();
+    if (!ctx) return;
+    this._note(ctx, 392.0, ctx.currentTime + 0.01, 0.18, "sine", 0.12);
+  },
+};
+
 /* ============ 身份（多用户隔离） ============
  * 数据按身份码分开存。URL 带 ?u=xxx 就用 xxx；没有就用本机存过的；
  * 都没有就随机生成一个 —— 所以别人裸开网址会自动拿到自己的空间，跟你互不干扰。
@@ -63,8 +125,8 @@ const QUOTES = [
   { t: "天覆地载，万物悉备，莫贵于人。", src: "《素问》" },
   { t: "学医总须得门而入，未有不得其门而能得其奥者。", src: "程钟龄" },
   { t: "医者意也，善于用意，即为良医。", src: "孙思邈" },
-  { t: "背得出不等于懂，懂了才能用。今天也踏实来一轮。", src: "执医伴" },
-  { t: "看了不等于会了，合上书能讲出来才算数。", src: "执医伴" },
+  { t: "背得出不等于懂，懂了才能用。今天也踏实来一轮。", src: "来都来了" },
+  { t: "看了不等于会了，合上书能讲出来才算数。", src: "来都来了" },
 ];
 
 /* ============ 数据层（上云 + 本地降级） ============ */
@@ -159,6 +221,16 @@ function bindEvents() {
   $("quizExit").addEventListener("click", exitQuiz);
   $("quizPrev").addEventListener("click", quizPrev);
   $("quizNext").addEventListener("click", quizNext);
+  $("quizRedo").addEventListener("click", redoQuiz);
+  $("quizHaoBtn").addEventListener("click", askHao);
+  $("haoSwitch").addEventListener("click", () => {
+    haoOn = !haoOn;
+    localStorage.setItem("study_hao", haoOn ? "on" : "off");
+    renderShangHan();
+    toast(haoOn ? "讲题按钮已打开" : "讲题按钮已关闭");
+  });
+  $("shangStart").addEventListener("click", () => startShangHan(false));
+  $("shangWrong").addEventListener("click", () => startShangHan(true));
   document.querySelectorAll(".qf-opts").forEach((g) => {
     g.querySelectorAll(".qf-btn").forEach((b) => {
       b.addEventListener("click", () => {
@@ -178,6 +250,7 @@ function switchPage(page) {
   $("page-" + page).classList.add("active");
   if (page === "outline") renderOutline();
   if (page === "quiz") renderQuiz();
+  if (page === "shanghan") renderShangHan();
   if (page === "calendar") renderCalendar();
   if (page === "settings") renderSettings();
   if (page === "today") renderToday();
@@ -244,8 +317,17 @@ function renderToday() {
   $("todayDateLine").textContent = now.getFullYear() + " 年 " + (now.getMonth() + 1) + " 月 " + now.getDate() + " 日 · 星期" + week;
   const checked = checkinDates().includes(todayStr());
   const btn = $("checkinBtn");
-  if (checked) { btn.textContent = "今天来过啦 ✓"; btn.classList.add("done"); }
-  else { btn.textContent = "我来了"; btn.classList.remove("done"); }
+  if (checked) { btn.textContent = "来了就好 ✓"; btn.classList.add("done"); }
+  else { btn.textContent = "来都来了"; btn.classList.remove("done"); }
+  const sb = $("soundBtn");
+  if (sb) {
+    sb.textContent = Sound.on ? "🔔 音效：开" : "🔕 音效：关";
+    sb.onclick = () => {
+      const on = Sound.toggle();
+      sb.textContent = on ? "🔔 音效：开" : "🔕 音效：关";
+      if (on) Sound.checkin();
+    };
+  }
   const st = streakStats();
   $("statStreak").textContent = st.streak;
   $("statMonth").textContent = checkinDates().filter((d) => d.startsWith(todayStr().slice(0, 7))).length;
@@ -279,12 +361,13 @@ function renderPhrase() {
 
 function doCheckin() {
   const t = todayStr();
-  if (checkinDates().includes(t)) { toast("今天已经来过啦，明天见"); return; }
+  if (checkinDates().includes(t)) { Sound.nope(); toast("今天已经来过啦，明天见"); return; }
   data.checkins.push(t);
+  Sound.checkin();
   saveSoon();
   renderToday();
   renderCalendar();
-  toast("来了就算数。今天也辛苦你。");
+  toast("来都来了，就算数。今天也辛苦你。");
 }
 
 /* ============ 大纲 ============ */
@@ -535,10 +618,49 @@ function toggleQuiz() {
 let quizBank = null;
 let quizList = [];
 let quizIdx = 0;
+/* 当前这道题是否处于「重做中」——重做时选项解锁，历史照常保留 */
+let quizRedoing = false;
+/* 郝万山讲题按钮开关（默认关，不主动烧 token） */
+let haoOn = localStorage.getItem("study_hao") === "on";
 let quizFilter = { lv: "", src: "", year: "", kind: "", order: "seq", only: "" };
 const QZ_LV = { L: "执业医师", A: "助理医师" };
 const QZ_KIND = { C: "基础概念题", T: "理论题", D: "分析诊断题" };
 const QZ_SRC = { P: "历年真题", M: "模拟题" };
+/* 题库里的 y 字段是数据集内部编号 1~5，不对应真实年份 —— 所以叫「卷」，不叫「年」 */
+const QZ_VOL = { 1: "第 1 卷", 2: "第 2 卷", 3: "第 3 卷", 4: "第 4 卷", 5: "第 5 卷" };
+
+/* ============ 伤寒专科：哪些题郝万山接得住 ============
+ * 讲稿是《伤寒论》讲课实录，只有六经辨证和经方他能引着讲。
+ * 所以先分两级判定：
+ *   只用强词（六经病名 / 经方名 / 伤寒论）—— 命中一个就算。
+ * 试过再加一层「症状弱词」（脉浮、恶寒、汗出这类）来捞纯描述题，实测误伤严重：
+ * 肺痈、热瘴、皮肤瘙痒都被判成伤寒，反而不如只要强词干净，所以弱词那层砍掉了。
+ * 命中 471 题（占 7.5%），够单独成册刷。
+ * 判定只用来决定「讲题按钮出不出来」和「伤寒专科刷哪些题」，不改动任何题目本身。
+ */
+const SHANG_STRONG = [
+  "伤寒论", "伤寒杂病论", "六经", "六经辨证", "太阳病", "阳明病", "少阳病", "太阴病", "少阴病", "厥阴病",
+  "太阳中风", "太阳伤寒", "经方", "条文",
+  "桂枝汤", "麻黄汤", "葛根汤", "大青龙汤", "小青龙汤", "白虎汤", "白虎加人参汤",
+  "调胃承气汤", "小承气汤", "大承气汤", "小柴胡汤", "大柴胡汤", "柴胡桂枝汤",
+  "柴胡桂枝干姜汤", "柴胡加龙骨牡蛎汤", "理中丸", "理中汤", "四逆汤", "四逆散", "真武汤", "附子汤",
+  "当归四逆汤", "吴茱萸汤", "五苓散", "猪苓汤", "苓桂术甘汤", "茯苓桂枝白术甘草汤",
+  "栀子豉汤", "黄连汤", "半夏泻心汤", "生姜泻心汤", "甘草泻心汤", "旋覆代赭汤", "炙甘草汤",
+  "茯苓四逆汤", "桃核承气汤", "抵当汤", "大陷胸汤", "小陷胸汤", "大陷胸丸", "三物白散",
+  "麻杏石甘汤", "麻黄杏仁甘草石膏汤", "葛根黄芩黄连汤", "黄芩汤", "十枣汤", "白通汤",
+  "通脉四逆汤", "乌梅丸", "干姜附子汤", "芍药甘草汤", "小建中汤", "麻黄附子细辛汤",
+  "麻黄附子甘草汤", "黄连阿胶汤", "猪肤汤", "桔梗汤", "半夏散", "瓜蒂散",
+  "桂枝加厚朴杏子汤", "桂枝加葛根汤", "桂枝新加汤", "桂枝去芍药汤", "桂枝附子汤",
+  "白术附子汤", "甘草附子汤", "桂枝人参汤", "桂枝甘草汤", "茯苓桂枝甘草大枣汤",
+  "厚朴生姜半夏甘草人参汤", "赤石脂禹余粮汤", "小柴胡", "大柴胡",
+];
+const shangText = (q) =>
+  String(q.q || "") + " " + (q.o || []).join(" ") + " " + String(q.r || "");
+function isShang(q) {
+  const t = shangText(q);
+  for (const k of SHANG_STRONG) if (t.includes(k)) return true;
+  return false;
+}
 
 const esc = (s) =>
   String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -572,6 +694,8 @@ function quizFiltered() {
   );
   if (f.only === "wrong") arr = arr.filter((q) => rec[q.i] && rec[q.i].ok === false);
   else if (f.only === "undo") arr = arr.filter((q) => !rec[q.i]);
+  else if (f.only === "shang") arr = arr.filter(isShang);
+  else if (f.only === "shangw") arr = arr.filter((q) => isShang(q) && rec[q.i] && rec[q.i].ok === false);
   if (f.order === "rand") {
     arr = arr.slice();
     for (let i = arr.length - 1; i > 0; i--) {
@@ -632,10 +756,11 @@ function exitQuiz() {
 function renderQuizQuestion() {
   const q = quizList[quizIdx];
   if (!q) return;
+  quizRedoing = false;                       // 换题就退出重做态
   const rec = quizRec()[q.i];
 
   $("quizProgress").textContent = "第 " + (quizIdx + 1) + " / " + quizList.length + " 题";
-  $("quizTags").textContent = [QZ_LV[q.l], QZ_KIND[q.k], QZ_SRC[q.s], "第 " + q.y + " 年"]
+  $("quizTags").textContent = [QZ_LV[q.l], QZ_KIND[q.k], QZ_SRC[q.s], QZ_VOL[q.y]]
     .filter(Boolean)
     .join(" · ");
   $("quizBarIn").style.width = (((quizIdx + 1) / quizList.length) * 100).toFixed(1) + "%";
@@ -656,31 +781,155 @@ function renderQuizQuestion() {
 
   $("quizFeedback").style.display = "none";
   $("quizReason").style.display = "none";
+  $("quizHaoBox").style.display = "none";
+  $("quizHaoRow").style.display = "none";
+  $("quizRedoRow").style.display = "none";
   $("quizPrev").disabled = quizIdx === 0;
   $("quizNext").disabled = quizIdx === quizList.length - 1;
 
-  if (rec) showQuizResult(q, rec.a, rec.ok);
+  if (rec) {
+    showQuizResult(q, rec.a, rec.ok);
+    showQuizHistory(rec);
+    showHaoButton(q);
+  }
 }
 
 function answerQuiz(letter) {
   const q = quizList[quizIdx];
   if (!q) return;
   const rec = quizRec();
-  if (rec[q.i]) return;                       // 已答过就不再改判
+  const old = rec[q.i];
+  if (old && !quizRedoing) return;            // 已答过就不再改判，除非点了「重做本题」
   const ok = letter === q.a;
-  rec[q.i] = { a: letter, ok: ok, t: Date.now() };
+  const now = Date.now();
+
+  if (old && quizRedoing) {
+    // 重做：旧答案先存进历史，再覆盖「最近一次」。历史只增不删
+    const base = Array.isArray(old.hist) && old.hist.length
+      ? old.hist
+      : [{ a: old.a, ok: old.ok, t: old.t }];
+    old.hist = base.concat([{ a: letter, ok: ok, t: now }]);
+    old.a = letter;
+    old.ok = ok;
+    old.t = now;
+    old.n = old.hist.length;
+  } else {
+    rec[q.i] = { a: letter, ok: ok, t: now, n: 1, hist: [{ a: letter, ok: ok, t: now }] };
+  }
+  quizRedoing = false;
   saveSoon();
   showQuizResult(q, letter, ok);
-  // 答完自动跳下一题（蓝基因的手感），留 900ms 看结果
-  // at 记录答题时的题号：若这 900ms 内你手点了上一题，就不抢你的操作
-  const at = quizIdx;
-  setTimeout(() => {
-    if (quizIdx !== at) return;
-    if (at < quizList.length - 1) {
-      quizIdx += 1;
-      renderQuizQuestion();
-    }
-  }, 900);
+  showQuizHistory(rec[q.i]);
+  showHaoButton(q);
+
+  // 答对：留 900ms 看一眼就自动进下一题（蓝基因的手感）
+  // 答错：不自动跳，停在这儿把解析看完，自己点「下一题」
+  // at 记下答题时的题号：若这 900ms 内你自己翻页了，就不抢你的操作
+  if (ok) {
+    const at = quizIdx;
+    setTimeout(() => {
+      if (quizIdx !== at) return;
+      if (at < quizList.length - 1) {
+        quizIdx += 1;
+        renderQuizQuestion();
+      }
+    }, 900);
+  }
+}
+
+/* 重做本题：解锁选项、清掉本次的判题显示，但历史记录原封不动 */
+function redoQuiz() {
+  quizRedoing = true;
+  $("quizOptions").querySelectorAll(".quiz-opt").forEach((n) =>
+    n.classList.remove("locked", "right", "wrong")
+  );
+  $("quizFeedback").style.display = "none";
+  $("quizReason").style.display = "none";
+  $("quizRedoRow").style.display = "none";
+  $("quizHaoRow").style.display = "none";
+  $("quizHaoBox").style.display = "none";
+  toast("重做这一题 —— 之前的记录都留着");
+}
+
+/* 答题区那行「做过 N 次 · 累计错 N 次」*/
+function showQuizHistory(rec) {
+  const hist = Array.isArray(rec.hist) && rec.hist.length
+    ? rec.hist
+    : [{ a: rec.a, ok: rec.ok, t: rec.t }];
+  const wrong = hist.filter((h) => !h.ok).length;
+  $("quizHistory").textContent =
+    "做过 " + hist.length + " 次 · 累计错 " + wrong + " 次 · 上次选 " + rec.a;
+  $("quizRedoRow").style.display = "flex";
+}
+
+/* 郝万山讲题按钮：只在开关打开、且这题属于伤寒范围时才出现 */
+function showHaoButton(q) {
+  const inShang = quizFilter.only === "shang" || quizFilter.only === "shangw";
+  const show = haoOn && (inShang || isShang(q));
+  $("quizHaoRow").style.display = show ? "block" : "none";
+}
+
+async function askHao() {
+  const q = quizList[quizIdx];
+  if (!q) return;
+  const btn = $("quizHaoBtn"), box = $("quizHaoBox"), body = $("quizHaoBody");
+  btn.disabled = true;
+  btn.textContent = "🎙️ 郝万山正在翻讲稿…";
+  box.style.display = "block";
+  body.textContent = "（翻讲稿中，稍等几秒）";
+  try {
+    const r = await fetchWithTimeout(
+      FN("chat"),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          crew: "郝万山",
+          mode: "explain",
+          uid: UID,
+          question: { q: q.q, o: q.o || [], a: q.a, r: q.r || "" },
+          messages: [{ role: "user", content: "讲讲这道题" }],
+        }),
+      },
+      60000
+    );
+    const j = await r.json().catch(() => ({}));
+    body.textContent =
+      r.ok && j.reply ? j.reply : "没讲成：" + (j.error || "HTTP " + r.status);
+  } catch (e) {
+    body.textContent =
+      "没讲成：" + ((e && e.message) || "网络不通") +
+      "\n（讲题要调云端 AI 接口，本地直接打开 html 用不了，部署到 Netlify 后才行）";
+  }
+  btn.disabled = false;
+  btn.textContent = "🎙️ 让郝万山讲讲这道题";
+}
+
+/* ============ 伤寒专科页 ============ */
+async function renderShangHan() {
+  await ensureQuizBank();
+  $("haoSwitch").textContent = "讲题按钮：" + (haoOn ? "开" : "关");
+  if (!quizBank) { $("shangCount").textContent = "题库加载失败，刷新页面重试"; return; }
+  const all = quizBank.questions.filter(isShang);
+  const rec = quizRec();
+  const done = all.filter((q) => rec[q.i]).length;
+  const wrong = all.filter((q) => rec[q.i] && rec[q.i].ok === false).length;
+  $("shangCount").innerHTML =
+    "伤寒相关 <b>" + all.length + "</b> 题　·　已做 " + done + " 题，其中错 " + wrong + " 题";
+}
+
+async function startShangHan(onlyWrong) {
+  await ensureQuizBank();
+  if (!quizBank) { toast("题库还没加载好"); return; }
+  quizFilter = { lv: "", src: "", year: "", kind: "", order: "seq", only: onlyWrong ? "shangw" : "shang" };
+  // 同步筛选按钮的高亮，免得页面上看着还是「全部」
+  // shangw（伤寒里只刷错的）在界面上没有对应按钮，让它高亮到「伤寒相关」
+  document.querySelectorAll(".qf-opts").forEach((g) => {
+    const want = quizFilter[g.dataset.group] === "shangw" ? "shang" : quizFilter[g.dataset.group];
+    g.querySelectorAll(".qf-btn").forEach((b) => b.classList.toggle("active", b.dataset.val === want));
+  });
+  switchPage("quiz");
+  startQuiz();
 }
 
 function showQuizResult(q, picked, ok) {
@@ -761,7 +1010,7 @@ function exportData() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "执医伴备份-" + todayStr() + ".json";
+  a.download = "来都来了备份-" + todayStr() + ".json";
   a.click();
   URL.revokeObjectURL(a.href);
   toast("备份已下载");
