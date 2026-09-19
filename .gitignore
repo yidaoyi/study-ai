@@ -5,3 +5,7 @@ node_modules/
 *.log
 .DS_Store
 __pycache__/
+
+# 题库下载的原始分片（38 个文件，约 5MB）。已合并进 data/questions/questions.json，
+# 需要时跑 tools/fetch_tcmle.py 可重新下载（脚本自带缓存）
+data/questions/raw/

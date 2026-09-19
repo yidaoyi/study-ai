@@ -68,7 +68,7 @@ const QUOTES = [
 ];
 
 /* ============ 数据层（上云 + 本地降级） ============ */
-const emptyData = () => ({ checkins: [], checkedItems: {}, examDate: null, chats: {} });
+const emptyData = () => ({ checkins: [], checkedItems: {}, examDate: null, chats: {}, quiz: {} });
 
 /* 带超时的 fetch：网络/服务异常时不许把页面卡死在"等待载入" */
 async function fetchWithTimeout(url, opts = {}, ms = 4000) {
@@ -153,6 +153,22 @@ function bindEvents() {
   $("chatSend").addEventListener("click", () => sendUserMessage($("chatInput").value));
   $("chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendUserMessage($("chatInput").value); });
   $("quizBtn").addEventListener("click", toggleQuiz);
+
+  /* 刷题 */
+  $("quizStart").addEventListener("click", startQuiz);
+  $("quizExit").addEventListener("click", exitQuiz);
+  $("quizPrev").addEventListener("click", quizPrev);
+  $("quizNext").addEventListener("click", quizNext);
+  document.querySelectorAll(".qf-opts").forEach((g) => {
+    g.querySelectorAll(".qf-btn").forEach((b) => {
+      b.addEventListener("click", () => {
+        g.querySelectorAll(".qf-btn").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        quizFilter[g.dataset.group] = b.dataset.val;
+        renderQuizCount();
+      });
+    });
+  });
 }
 
 function switchPage(page) {
@@ -161,6 +177,7 @@ function switchPage(page) {
   document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
   $("page-" + page).classList.add("active");
   if (page === "outline") renderOutline();
+  if (page === "quiz") renderQuiz();
   if (page === "calendar") renderCalendar();
   if (page === "settings") renderSettings();
   if (page === "today") renderToday();
@@ -513,6 +530,198 @@ function toggleQuiz() {
 }
 
 /* ============ 设置 ============ */
+/* ============ 刷题 ============ */
+/* 题库来自开源数据集 Bolin97/TCMLE（Apache-2.0），进刷题页时才懒加载，不拖慢首屏 */
+let quizBank = null;
+let quizList = [];
+let quizIdx = 0;
+let quizFilter = { lv: "", src: "", year: "", kind: "", order: "seq", only: "" };
+const QZ_LV = { L: "执业医师", A: "助理医师" };
+const QZ_KIND = { C: "基础概念题", T: "理论题", D: "分析诊断题" };
+const QZ_SRC = { P: "历年真题", M: "模拟题" };
+
+const esc = (s) =>
+  String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+
+const quizRec = () => (data.quiz && typeof data.quiz === "object" ? data.quiz : (data.quiz = {}));
+
+async function ensureQuizBank() {
+  if (quizBank) return quizBank;
+  try {
+    const r = await fetchWithTimeout("data/questions/questions.json", {}, 25000);
+    if (!r.ok) throw new Error("bad");
+    quizBank = await r.json();
+  } catch (e) {
+    quizBank = null;
+  }
+  return quizBank;
+}
+
+function quizFiltered() {
+  if (!quizBank || !quizBank.questions) return [];
+  const f = quizFilter;
+  const rec = quizRec();
+  let arr = quizBank.questions.filter(
+    (q) =>
+      (!f.lv || q.l === f.lv) &&
+      (!f.src || q.s === f.src) &&
+      (!f.year || String(q.y) === f.year) &&
+      (!f.kind || q.k === f.kind)
+  );
+  if (f.only === "wrong") arr = arr.filter((q) => rec[q.i] && rec[q.i].ok === false);
+  else if (f.only === "undo") arr = arr.filter((q) => !rec[q.i]);
+  if (f.order === "rand") {
+    arr = arr.slice();
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = arr[i];
+      arr[i] = arr[j];
+      arr[j] = t;
+    }
+  }
+  return arr;
+}
+
+function quizDoneStats() {
+  const list = Object.keys(quizRec()).map((k) => quizRec()[k]);
+  return { done: list.length, wrong: list.filter((x) => !x.ok).length };
+}
+
+function renderQuizCount() {
+  if (!quizBank) {
+    $("quizCount").innerHTML = "题库加载中…";
+    return;
+  }
+  const n = quizFiltered().length;
+  const s = quizDoneStats();
+  $("quizCount").innerHTML =
+    "选中 <b>" + n + "</b> 题　·　已做 " + s.done + " 题，其中错 " + s.wrong + " 题";
+}
+
+async function renderQuiz() {
+  await ensureQuizBank();
+  if (!quizBank) {
+    $("quizCount").innerHTML = "题库加载失败，刷新页面重试";
+    return;
+  }
+  if (quizList.length) renderQuizQuestion();
+  else renderQuizCount();
+}
+
+function startQuiz() {
+  quizList = quizFiltered();
+  quizIdx = 0;
+  if (!quizList.length) {
+    toast("这个范围没有题，换个条件试试");
+    return;
+  }
+  $("quizSetup").style.display = "none";
+  $("quizPlay").style.display = "block";
+  renderQuizQuestion();
+}
+
+function exitQuiz() {
+  quizList = [];
+  $("quizPlay").style.display = "none";
+  $("quizSetup").style.display = "block";
+  renderQuizCount();
+}
+
+function renderQuizQuestion() {
+  const q = quizList[quizIdx];
+  if (!q) return;
+  const rec = quizRec()[q.i];
+
+  $("quizProgress").textContent = "第 " + (quizIdx + 1) + " / " + quizList.length + " 题";
+  $("quizTags").textContent = [QZ_LV[q.l], QZ_KIND[q.k], QZ_SRC[q.s], "第 " + q.y + " 年"]
+    .filter(Boolean)
+    .join(" · ");
+  $("quizBarIn").style.width = (((quizIdx + 1) / quizList.length) * 100).toFixed(1) + "%";
+  $("quizStem").textContent = q.q;
+
+  const box = $("quizOptions");
+  box.innerHTML = "";
+  ["A", "B", "C", "D", "E"].forEach((L, i) => {
+    const txt = q.o && q.o[i];
+    if (!txt) return;
+    const b = document.createElement("button");
+    b.className = "quiz-opt";
+    b.dataset.letter = L;
+    b.innerHTML = '<span class="ok">' + L + "</span><span>" + esc(txt) + "</span>";
+    b.addEventListener("click", () => answerQuiz(L));
+    box.appendChild(b);
+  });
+
+  $("quizFeedback").style.display = "none";
+  $("quizReason").style.display = "none";
+  $("quizPrev").disabled = quizIdx === 0;
+  $("quizNext").disabled = quizIdx === quizList.length - 1;
+
+  if (rec) showQuizResult(q, rec.a, rec.ok);
+}
+
+function answerQuiz(letter) {
+  const q = quizList[quizIdx];
+  if (!q) return;
+  const rec = quizRec();
+  if (rec[q.i]) return;                       // 已答过就不再改判
+  const ok = letter === q.a;
+  rec[q.i] = { a: letter, ok: ok, t: Date.now() };
+  saveSoon();
+  showQuizResult(q, letter, ok);
+  // 答完自动跳下一题（蓝基因的手感），留 900ms 看结果
+  // at 记录答题时的题号：若这 900ms 内你手点了上一题，就不抢你的操作
+  const at = quizIdx;
+  setTimeout(() => {
+    if (quizIdx !== at) return;
+    if (at < quizList.length - 1) {
+      quizIdx += 1;
+      renderQuizQuestion();
+    }
+  }, 900);
+}
+
+function showQuizResult(q, picked, ok) {
+  const nodes = $("quizOptions").querySelectorAll(".quiz-opt");
+  nodes.forEach((n) => {
+    const L = n.dataset.letter;
+    n.classList.add("locked");
+    if (L === q.a) n.classList.add("right");
+    else if (L === picked) n.classList.add("wrong");
+  });
+
+  const fb = $("quizFeedback");
+  fb.style.display = "block";
+  fb.className = "quiz-feedback " + (ok ? "good" : "bad");
+  fb.textContent = ok ? "答对了" : "答错了　你选 " + picked + "，正确答案 " + q.a;
+
+  const text = (q.r || "").trim();
+  $("quizReason").style.display = "block";
+  if (text) {
+    const maybeCut = text.length >= 150 || /[，。；：、]$/.test(text);
+    $("quizReasonBody").textContent = text + (maybeCut ? "\n（这条解析可能不完整）" : "");
+    $("quizReasonBody").className = "quiz-reason-b" + (maybeCut ? " cut" : "");
+  } else {
+    $("quizReasonBody").textContent = "这道题没有收录解析。";
+    $("quizReasonBody").className = "quiz-reason-b cut";
+  }
+}
+
+function quizPrev() {
+  if (quizIdx > 0) {
+    quizIdx -= 1;
+    renderQuizQuestion();
+  }
+}
+function quizNext() {
+  if (quizIdx < quizList.length - 1) {
+    quizIdx += 1;
+    renderQuizQuestion();
+  }
+}
+
 function renderSettings() {
   // 身份（多用户隔离）
   $("uidText").textContent = UID;
